@@ -1,5 +1,17 @@
 function queryString(params) {
-  const query = new URLSearchParams(params);
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null) continue;
+    if (Array.isArray(value)) {
+      if (value.length > 0) {
+        query.set(key, value.join(','));
+      }
+      continue;
+    }
+    query.set(key, String(value));
+  }
+
   return query.toString();
 }
 

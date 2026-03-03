@@ -1,8 +1,14 @@
-export function mountFunnelWidget(container, funnel) {
+function pct(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '0.00';
+  return numeric.toFixed(2);
+}
+
+export function mountFunnelWidget(container, funnel = {}) {
   const rows = [
-    ['Views', funnel.views],
-    ['Downloads', funnel.downloads],
-    ['Sales', funnel.sales]
+    ['Views', Number(funnel.views) || 0],
+    ['Downloads', Number(funnel.downloads) || 0],
+    ['Sales', Number(funnel.sales) || 0]
   ];
 
   const maxValue = Math.max(...rows.map((row) => row[1]), 1);
@@ -23,7 +29,7 @@ export function mountFunnelWidget(container, funnel) {
 
   wrapper.insertAdjacentHTML(
     'beforeend',
-    `<p class="funnel__rates">View→Download: ${funnel.viewToDownloadRate}% · Download→Sale: ${funnel.downloadToSaleRate}%</p>`
+    `<p class="funnel__rates">View→Download: ${pct(funnel.viewToDownloadRate)}% · Download→Sale: ${pct(funnel.downloadToSaleRate)}%</p>`
   );
 
   container.append(wrapper);
