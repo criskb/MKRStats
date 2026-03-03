@@ -446,3 +446,116 @@ body {
 .status-banner a {
   color: #cde3ff;
 }
+
+.dashboard-controls {
+  padding: 0 2rem;
+}
+
+.global-bar,
+.mode-tabs {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.global-bar {
+  background: rgba(32, 39, 52, 0.75);
+  border: 1px solid #2b3445;
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.global-bar label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.global-bar select {
+  min-width: 140px;
+  background: #111722;
+  color: var(--text);
+  border: 1px solid #334057;
+  border-radius: 8px;
+  padding: 0.45rem;
+}
+
+.mode-tab {
+  background: #1a2432;
+  color: var(--muted);
+  border: 1px solid #2d3b52;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+.mode-tab--active {
+  color: white;
+  border-color: #5784ff;
+  background: linear-gradient(120deg, #354967, #31345e);
+}
+
+.pill--live {
+  margin-left: auto;
+  background: #41222b;
+  color: #ffadb9;
+}
+
+.briefing {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.briefing__headline {
+  margin: 0;
+  font-weight: 700;
+  color: #c7dcff;
+}
+
+.segment-bar {
+  display: flex;
+  height: 34px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid #2a3240;
+}
+
+.segment-bar__item {
+  border: 0;
+  background: linear-gradient(120deg, #4780ff, #6b6cff);
+  color: white;
+  font-size: 0.74rem;
+}
+
+.page-header {
+  background: radial-gradient(1200px 240px at 20% -20%, rgba(73, 160, 255, 0.22), transparent),
+    radial-gradient(900px 220px at 80% -40%, rgba(125, 107, 255, 0.2), transparent);
+}
+
+.widget {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.widget:hover {
+  transform: translateY(-2px);
+  border-color: #3a4b66;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
+}
+
+.kpi-card {
+  background: linear-gradient(160deg, #111722, #121b2a);
+}
+
+.mode-tab--active {
+  box-shadow: 0 0 0 1px rgba(135, 178, 255, 0.4), 0 8px 18px rgba(64, 93, 166, 0.4);
+}
+
+.button-secondary:hover,
+.button-primary:hover,
+.segment-bar__item:hover {
+  filter: brightness(1.08);
+}

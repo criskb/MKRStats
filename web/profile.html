@@ -23,7 +23,7 @@
         <div class="widget__content">
           <p class="security-note">
             API keys are encrypted in-browser with AES-GCM using a key derived from your passphrase (PBKDF2).
-            The passphrase is never stored or sent to the server.
+            The passphrase is never stored or sent to the server. Server-side encryption is used when CONNECTION_MASTER_KEY is configured; otherwise server sync falls back to plaintext config storage.
           </p>
         </div>
       </section>

@@ -4,9 +4,21 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { PLATFORM_CONFIG } from './config/platforms.js';
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
-import { forecastNextDays } from './services/predictions/forecastService.js';
-import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
 import { buildCollectionSummary } from './services/analytics/collectionSummaryService.js';
+import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
+import { processBridgeIngest } from './services/connectors/bridgeIngestService.js';
+import {
+  authenticateBridgeSubmission,
+  getConnectionStatuses,
+  upsertConnectionConfig
+} from './services/connectors/connectionConfigStore.js';
+import { fetchAllPlatformStats } from './services/connectors/platformConnectorService.js';
+import { forecastNextDays } from './services/predictions/forecastService.js';
+import {
+  initializeStorage,
+  readLatestBridgeIngestCapturedAt,
+  readRecentCollectionRuns
+} from './services/storage/index.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __filename = fileURLToPath(import.meta.url);
@@ -20,79 +32,9 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8'
 };
 
-
-const connectionStore = new Map();
-
-async function readRequestJson(req) {
-  const chunks = [];
-
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-
-  const raw = Buffer.concat(chunks).toString('utf-8').trim();
-  if (!raw) return {};
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new Error('Invalid JSON body');
-  }
-}
-
-function normalizeConnectionsInput(input) {
-  const entries = Object.entries(input ?? {});
-  const allowedPlatforms = new Set(PLATFORM_CONFIG.map((platform) => platform.id));
-
-  const normalized = {};
-  for (const [platformId, value] of entries) {
-    if (!allowedPlatforms.has(platformId)) continue;
-
-    const handle = String(value?.handle ?? '').trim();
-    const apiKey = String(value?.apiKey ?? '').trim();
-
-    if (!handle && !apiKey) continue;
-
-    normalized[platformId] = {
-      handle,
-      hasApiKey: Boolean(apiKey),
-      updatedAt: new Date().toISOString()
-    };
-  }
-
-  return normalized;
-}
-
-async function handleSaveConnections(req, res) {
-  try {
-    const body = await readRequestJson(req);
-    const connections = normalizeConnectionsInput(body.connections);
-
-    const snapshot = {
-      updatedAt: new Date().toISOString(),
-      connections
-    };
-
-    connectionStore.set('default', snapshot);
-
-    sendJson(res, 200, {
-      message: 'Connections saved',
-      configuredPlatforms: Object.keys(connections),
-      configuredCount: Object.keys(connections).length
-    });
-  } catch (error) {
-    sendJson(res, 400, { message: error.message || 'Unable to save connections' });
-  }
-}
-
-function handleGetConnections(_req, res) {
-  const snapshot = connectionStore.get('default') ?? { updatedAt: null, connections: {} };
-  sendJson(res, 200, snapshot);
-}
-
 function normalizeScope(url) {
-  const requestedHorizon = Number(url.searchParams.get('horizon') ?? 14);
-  const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(60, Math.floor(requestedHorizon))) : 14;
+  const requestedHorizon = Number(url.searchParams.get('horizon') ?? 30);
+  const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(365, Math.floor(requestedHorizon))) : 30;
   const selectedPlatform = url.searchParams.get('platform') ?? 'all';
   const connected = (url.searchParams.get('connected') ?? '')
     .split(',')
@@ -138,8 +80,6 @@ function readJsonBody(req) {
   });
 }
 
-
-
 function isAllowedBridgeOrigin(req) {
   const configured = String(process.env.MKRSTATS_BRIDGE_ALLOWED_ORIGINS ?? '').trim();
   if (!configured) return true;
@@ -178,6 +118,18 @@ function selectPlatforms(rawPlatformData, selectedPlatform, connected = []) {
   return scoped.filter((platform) => connectedSet.has(platform.id));
 }
 
+function formatRunSummary(run = {}) {
+  return {
+    runId: run.runId ?? run.run_id ?? null,
+    startedAt: run.startedAt ?? run.started_at ?? null,
+    completedAt: run.completedAt ?? run.completed_at ?? null,
+    status: run.status ?? 'unknown',
+    platformCount: Number(run.platformCount ?? run.platform_count ?? 0),
+    modelCount: Number(run.modelCount ?? run.model_count ?? 0),
+    errorCount: Number(run.errorCount ?? run.error_count ?? 0),
+    platformQualityMetrics: run.platformQualityMetrics ?? run.platform_quality_metrics ?? []
+  };
+}
 
 async function getOverviewPayload(url) {
   const { horizon, selectedPlatform, connected } = normalizeScope(url);
@@ -289,7 +241,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+      'Access-Control-Allow-Headers': 'Content-Type,X-Bridge-Api-Token,X-Bridge-Session'
     });
     res.end();
     return;
@@ -308,17 +260,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-
-  if (req.method === 'GET' && url.pathname === '/api/connections') {
-    handleGetConnections(req, res);
-    return;
-  }
-
-  if (req.method === 'POST' && url.pathname === '/api/connections') {
-    await handleSaveConnections(req, res);
-    return;
-  }
-
   if (req.method === 'GET' && url.pathname === '/api/overview') {
     await handleOverview(req, res, url);
     return;
@@ -327,8 +268,33 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/connections') {
     try {
       const payload = await readJsonBody(req);
-      const saved = await upsertConnectionConfig(payload);
-      sendJson(res, 200, { connection: saved });
+      if (payload.connections && typeof payload.connections === 'object') {
+        const entries = Object.entries(payload.connections);
+        const configured = [];
+
+        for (const [platformId, value] of entries) {
+          const accountId = String(value?.handle ?? '').trim();
+          const token = String(value?.apiKey ?? '').trim();
+          if (!accountId) continue;
+          const saved = await upsertConnectionConfig({
+            platformId,
+            accountId,
+            authType: 'api_key',
+            credential: token ? { apiToken: token, sessionId: token } : { handle: accountId },
+            status: 'active'
+          });
+          configured.push(saved.platformId);
+        }
+
+        sendJson(res, 200, {
+          message: 'Connections saved',
+          configuredPlatforms: configured,
+          configuredCount: configured.length
+        });
+      } else {
+        const saved = await upsertConnectionConfig(payload);
+        sendJson(res, 200, { connection: saved });
+      }
     } catch (error) {
       sendJson(res, 400, { message: error.message });
     }
@@ -407,13 +373,6 @@ const server = http.createServer(async (req, res) => {
 
   await serveStatic(req, res);
 });
-
-
-async function initializeStorage() {
-  // Placeholder for future persistent storage bootstrapping.
-  // Kept explicit so startup code is stable across branches that call it.
-  return true;
-}
 
 async function start() {
   try {
