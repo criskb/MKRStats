@@ -24,7 +24,12 @@ function normalizeScope(url) {
   const requestedHorizon = Number(url.searchParams.get('horizon') ?? 14);
   const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(60, Math.floor(requestedHorizon))) : 14;
   const selectedPlatform = url.searchParams.get('platform') ?? 'all';
-  return { horizon, selectedPlatform };
+  const connected = (url.searchParams.get('connected') ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return { horizon, selectedPlatform, connected };
 }
 
 function sendJson(res, status, payload) {
@@ -44,16 +49,21 @@ function sendCsv(res, filename, text) {
   res.end(text);
 }
 
-function selectPlatforms(rawPlatformData, selectedPlatform) {
-  return selectedPlatform === 'all'
+function selectPlatforms(rawPlatformData, selectedPlatform, connected = []) {
+  const scoped = selectedPlatform === 'all'
     ? rawPlatformData
     : rawPlatformData.filter((platform) => platform.id === selectedPlatform);
+
+  if (!connected.length) return scoped;
+
+  const connectedSet = new Set(connected);
+  return scoped.filter((platform) => connectedSet.has(platform.id));
 }
 
 async function getOverviewPayload(url) {
-  const { horizon, selectedPlatform } = normalizeScope(url);
+  const { horizon, selectedPlatform, connected } = normalizeScope(url);
   const rawPlatformData = await fetchAllPlatformStats();
-  const platformData = selectPlatforms(rawPlatformData, selectedPlatform);
+  const platformData = selectPlatforms(rawPlatformData, selectedPlatform, connected);
 
   if (platformData.length === 0) {
     return { status: 404, error: { message: `Platform '${selectedPlatform}' not found` } };
@@ -67,6 +77,7 @@ async function getOverviewPayload(url) {
     payload: {
       generatedAt: new Date().toISOString(),
       selectedPlatform,
+      connected,
       horizon,
       sampleWindowDays: aggregated.timeline.length,
       platforms: platformData,

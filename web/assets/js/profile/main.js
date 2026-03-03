@@ -4,13 +4,15 @@ import {
   decryptPayload,
   loadEncryptedConnections,
   saveEncryptedConnections,
+  saveConnectionMeta,
   clearEncryptedConnections
 } from './secureStore.js';
 
 function renderForm(root, platforms, values = {}) {
-  const rows = platforms.map((platform) => {
-    const current = values[platform.id] ?? { handle: '', apiKey: '' };
-    return `
+  const rows = platforms
+    .map((platform) => {
+      const current = values[platform.id] ?? { handle: '', apiKey: '' };
+      return `
       <div class="profile-row">
         <h3>${platform.name}</h3>
         <label>
@@ -23,7 +25,8 @@ function renderForm(root, platforms, values = {}) {
         </label>
       </div>
     `;
-  }).join('');
+    })
+    .join('');
 
   root.innerHTML = `
     <form id="profile-form" class="profile-form">
@@ -94,7 +97,8 @@ async function initProfile() {
         const values = collectValues(form, platforms);
         const encrypted = await encryptPayload({ values, updatedAt: new Date().toISOString() }, passphraseInput.value);
         saveEncryptedConnections(encrypted);
-        status('Settings saved encrypted in localStorage.');
+        saveConnectionMeta(values);
+        status('Settings saved encrypted in localStorage. Our Stats now uses configured platforms.');
       } catch (error) {
         status(`Unable to save settings: ${error.message}`, true);
       }
