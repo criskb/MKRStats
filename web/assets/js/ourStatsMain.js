@@ -1,14 +1,18 @@
 import { getCollectionStatus, getOverview } from './api/client.js';
 import { createWidget } from './components/widget.js';
+import { loadConnectionMeta } from './profile/secureStore.js';
+import { mountBrandSummaryWidget } from './widgets/brandSummaryWidget.js';
+import {
+  mountCollectionHealthWidget,
+  renderCollectionHealthBanner
+} from './widgets/collectionHealthWidget.js';
+import { mountDeltaWidget } from './widgets/deltaWidget.js';
+import { mountForecastWidget } from './widgets/forecastWidget.js';
+import { mountFunnelWidget } from './widgets/funnelWidget.js';
 import { mountOverviewWidget } from './widgets/overviewWidget.js';
 import { mountPerformanceChart } from './widgets/performanceChartWidget.js';
-import { mountTopModelsWidget } from './widgets/topModelsWidget.js';
-import { mountForecastWidget } from './widgets/forecastWidget.js';
-import { mountDeltaWidget } from './widgets/deltaWidget.js';
-import { mountFunnelWidget } from './widgets/funnelWidget.js';
 import { mountScenarioWidget } from './widgets/scenarioWidget.js';
-import { mountBrandSummaryWidget } from './widgets/brandSummaryWidget.js';
-import { loadConnectionMeta } from './profile/secureStore.js';
+import { mountTopModelsWidget } from './widgets/topModelsWidget.js';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -18,8 +22,7 @@ function getConnectionScope() {
 
   return {
     configuredPlatforms,
-    hasConfiguredScope: configuredPlatforms.length > 0,
-    meta
+    hasConfiguredScope: configuredPlatforms.length > 0
   };
 }
 
@@ -48,11 +51,14 @@ async function renderOurStats() {
 
   try {
     const scope = getConnectionScope();
-    const data = await getOverview({
-      platform: 'all',
-      horizon: 30,
-      connected: scope.configuredPlatforms
-    });
+    const [data, statusPayload] = await Promise.all([
+      getOverview({
+        platform: 'all',
+        horizon: 30,
+        connected: scope.configuredPlatforms
+      }),
+      getCollectionStatus(10)
+    ]);
 
     root.innerHTML = '';
 
@@ -80,6 +86,7 @@ async function renderOurStats() {
     );
 
     renderScopeNotice(root, scope);
+    renderCollectionHealthBanner(root, data.collection);
     mountBrandSummaryWidget(summary.content, data);
     mountOverviewWidget(kpi.content, data.aggregated.totals);
     mountPerformanceChart(trend.content, data.aggregated.timeline);

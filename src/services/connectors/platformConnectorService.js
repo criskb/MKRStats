@@ -201,7 +201,7 @@ function logConnectorEvent(event, payload = {}) {
 
 export async function fetchAllPlatformStats({ correlationId = null, runId = null } = {}) {
   logConnectorEvent('collection.connector_batch.started', { correlationId, runId });
-  const connections = await getConnectionStatuses();
+  const connections = await getConnectionStatuses({ includeCredentials: true });
 
   const platformStats = await Promise.all(
     PLATFORM_CONFIG.map(async (platform) => {

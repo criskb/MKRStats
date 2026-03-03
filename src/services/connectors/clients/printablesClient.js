@@ -1,4 +1,4 @@
-import { normalizeSnapshot, paginate, requestWithRetry } from '../baseConnector.js';
+import { buildMockPlatformSnapshot, normalizeSnapshot, paginate, requestWithRetry } from '../baseConnector.js';
 import { normalizeSeriesToCanonical } from '../validation/connectorPayloadValidators.js';
 
 function normalizeMetricRow(row = {}) {
@@ -41,8 +41,12 @@ export const printablesClient = {
   }
 };
 
-export async function fetchPrintablesSnapshot(_connection) {
+export async function fetchPrintablesSnapshot(connection = {}) {
   const models = await printablesClient.discoverItems();
+
+  if (models.length === 0) {
+    return buildMockPlatformSnapshot('printables', connection.accountId ?? connection.credential?.handle ?? 'default');
+  }
 
   return normalizeSnapshot('printables', {
     source: 'printables_api',
