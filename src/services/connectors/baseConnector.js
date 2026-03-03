@@ -24,7 +24,13 @@ function wait(ms) {
 }
 
 export function isMockFallbackEnabled() {
-  return String(process.env.MKRSTATS_USE_MOCK_DATA ?? '').trim().toLowerCase() === 'true';
+  const explicitMockFlag = String(process.env.MKRSTATS_USE_MOCK_DATA ?? '').trim().toLowerCase() === 'true';
+
+  if (process.env.NODE_ENV === 'production' && !explicitMockFlag) {
+    return false;
+  }
+
+  return explicitMockFlag;
 }
 
 export async function withTimeout(taskFactory, timeoutMs = DEFAULT_TIMEOUT_MS) {
