@@ -22,7 +22,9 @@ export class SqliteStorageAdapter {
         fetched_platforms INTEGER DEFAULT 0,
         upserted_platform_rows INTEGER DEFAULT 0,
         upserted_model_rows INTEGER DEFAULT 0,
-        error_message TEXT
+        error_message TEXT,
+        platform_quality_metrics TEXT,
+        quality_summary TEXT
       );
 
       CREATE TABLE IF NOT EXISTS platform_daily_metrics (
@@ -48,6 +50,15 @@ export class SqliteStorageAdapter {
         PRIMARY KEY (platform_id, model_id, date)
       );
     `);
+
+    const columns = this.db.prepare('PRAGMA table_info(collection_runs)').all();
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has('platform_quality_metrics')) {
+      this.db.exec('ALTER TABLE collection_runs ADD COLUMN platform_quality_metrics TEXT;');
+    }
+    if (!names.has('quality_summary')) {
+      this.db.exec('ALTER TABLE collection_runs ADD COLUMN quality_summary TEXT;');
+    }
   }
 
   async createCollectionRun({ runType, status, startedAt }) {
@@ -59,13 +70,35 @@ export class SqliteStorageAdapter {
     return result.lastInsertRowid;
   }
 
-  async completeCollectionRun(id, { status, completedAt, fetchedPlatforms, upsertedPlatformRows, upsertedModelRows, errorMessage = null }) {
+  async completeCollectionRun(
+    id,
+    {
+      status,
+      completedAt,
+      fetchedPlatforms,
+      upsertedPlatformRows,
+      upsertedModelRows,
+      errorMessage = null,
+      platformQualityMetrics = null,
+      qualitySummary = null
+    }
+  ) {
     const stmt = this.db.prepare(`
       UPDATE collection_runs
-      SET status = ?, completed_at = ?, fetched_platforms = ?, upserted_platform_rows = ?, upserted_model_rows = ?, error_message = ?
+      SET status = ?, completed_at = ?, fetched_platforms = ?, upserted_platform_rows = ?, upserted_model_rows = ?, error_message = ?, platform_quality_metrics = ?, quality_summary = ?
       WHERE id = ?
     `);
-    stmt.run(status, completedAt, fetchedPlatforms, upsertedPlatformRows, upsertedModelRows, errorMessage, id);
+    stmt.run(
+      status,
+      completedAt,
+      fetchedPlatforms,
+      upsertedPlatformRows,
+      upsertedModelRows,
+      errorMessage,
+      platformQualityMetrics ? JSON.stringify(platformQualityMetrics) : null,
+      qualitySummary ? JSON.stringify(qualitySummary) : null,
+      id
+    );
   }
 
   async upsertPlatformDailyMetrics(rows) {

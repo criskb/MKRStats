@@ -29,6 +29,33 @@ function buildModelRows(platform, dates) {
   })));
 }
 
+function buildRunQualityMetrics(platformData) {
+  const perPlatform = platformData.map((platform) => ({
+    platformId: platform.id,
+    connectorStatus: platform.metadata?.connector?.status ?? 'unknown',
+    qualityScore: platform.snapshot?.quality?.qualityScore ?? 0,
+    stale: Boolean(platform.snapshot?.quality?.checks?.staleSnapshot?.stale),
+    failed: Boolean(platform.snapshot?.quality?.hasFailures) || platform.metadata?.connector?.status === 'error',
+    checks: platform.snapshot?.quality?.checks ?? null
+  }));
+
+  const stalePlatforms = perPlatform.filter((entry) => entry.stale).length;
+  const failedPlatforms = perPlatform.filter((entry) => entry.failed).length;
+  const averageQualityScore = perPlatform.length
+    ? Math.round(perPlatform.reduce((acc, entry) => acc + entry.qualityScore, 0) / perPlatform.length)
+    : 0;
+
+  return {
+    perPlatform,
+    summary: {
+      averageQualityScore,
+      stalePlatforms,
+      failedPlatforms,
+      healthyPlatforms: Math.max(0, perPlatform.length - failedPlatforms)
+    }
+  };
+}
+
 export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack = null } = {}) {
   const storage = getStorage();
   const startedAt = new Date().toISOString();
@@ -36,6 +63,7 @@ export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack
 
   try {
     const platformData = await fetchAllPlatformStats();
+    const qualityMetrics = buildRunQualityMetrics(platformData);
     let upsertedPlatformRows = 0;
     let upsertedModelRows = 0;
 
@@ -58,10 +86,18 @@ export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack
       completedAt: new Date().toISOString(),
       fetchedPlatforms: platformData.length,
       upsertedPlatformRows,
-      upsertedModelRows
+      upsertedModelRows,
+      platformQualityMetrics: qualityMetrics.perPlatform,
+      qualitySummary: qualityMetrics.summary
     });
 
-    return { runId, fetchedPlatforms: platformData.length, upsertedPlatformRows, upsertedModelRows };
+    return {
+      runId,
+      fetchedPlatforms: platformData.length,
+      upsertedPlatformRows,
+      upsertedModelRows,
+      qualitySummary: qualityMetrics.summary
+    };
   } catch (error) {
     await storage.completeCollectionRun(runId, {
       status: 'failed',
@@ -69,7 +105,9 @@ export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack
       fetchedPlatforms: 0,
       upsertedPlatformRows: 0,
       upsertedModelRows: 0,
-      errorMessage: error.message
+      errorMessage: error.message,
+      platformQualityMetrics: [],
+      qualitySummary: { averageQualityScore: 0, stalePlatforms: 0, failedPlatforms: 0, healthyPlatforms: 0 }
     });
     throw error;
   }

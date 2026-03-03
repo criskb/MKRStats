@@ -59,6 +59,7 @@ export async function readPlatformHistory(platformIds = []) {
       downloads: Number(row.downloads),
       sales: Number(row.sales),
       revenue: Number(row.revenue),
+      currency: 'USD',
       collectedAt
     });
     seriesByPlatform.set(key, rows);
@@ -111,6 +112,7 @@ export async function readPlatformHistory(platformIds = []) {
         platformId: platform.id,
         fetchedAt,
         source: 'stored_history',
+        currency: 'USD',
         series: platformSeries,
         models: platformModels
       }

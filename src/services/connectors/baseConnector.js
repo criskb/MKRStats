@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { lastNDays } from '../../utils/date.js';
+import { validateAndNormalizeSnapshot } from './validation/connectorPayloadValidators.js';
 
 const MODELS = [
   'Articulated Dragon v3',
@@ -90,42 +91,16 @@ export async function paginate(fetchPage, {
 }
 
 export function normalizeSeriesRow(row = {}) {
-  return {
-    date: String(row.date ?? '').slice(0, 10),
-    views: Number(row.views ?? 0),
-    downloads: Number(row.downloads ?? 0),
-    sales: Number(row.sales ?? 0),
-    revenue: Number(Number(row.revenue ?? 0).toFixed(2))
-  };
+  return validateAndNormalizeSnapshot('tmp', { series: [row] }).series[0];
 }
 
 export function normalizeModelRow(row = {}) {
-  const downloads = Number(row.downloads ?? 0);
-  const sales = Number(row.sales ?? 0);
-
-  return {
-    id: String(row.id ?? row.title ?? crypto.randomUUID?.() ?? `${Date.now()}`),
-    title: String(row.title ?? 'Untitled Model'),
-    downloads,
-    sales,
-    revenue: Number(Number(row.revenue ?? 0).toFixed(2)),
-    conversionRate: Number((((sales / Math.max(downloads, 1)) * 100)).toFixed(2))
-  };
+  const normalized = validateAndNormalizeSnapshot('tmp', { models: [{ ...row, id: row.id ?? row.title ?? crypto.randomUUID?.() ?? `${Date.now()}` }] });
+  return normalized.models[0];
 }
 
 export function normalizeSnapshot(platformId, snapshot = {}) {
-  const series = Array.isArray(snapshot.series) ? snapshot.series.map(normalizeSeriesRow) : [];
-  const models = Array.isArray(snapshot.models)
-    ? snapshot.models.map(normalizeModelRow).sort((a, b) => b.revenue - a.revenue)
-    : [];
-
-  return {
-    platformId,
-    series,
-    models,
-    fetchedAt: snapshot.fetchedAt ?? new Date().toISOString(),
-    source: snapshot.source ?? 'platform_connector'
-  };
+  return validateAndNormalizeSnapshot(platformId, snapshot);
 }
 
 export function buildMockPlatformSnapshot(platformId) {
