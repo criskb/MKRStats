@@ -159,4 +159,17 @@ export class SqliteStorageAdapter {
 
     return this.db.prepare(query).all(...values);
   }
+
+  async getRecentCollectionRuns(limit = 20) {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+    const rows = this.db.prepare(
+      `SELECT * FROM collection_runs ORDER BY started_at DESC LIMIT ?`
+    ).all(safeLimit);
+
+    return rows.map((row) => ({
+      ...row,
+      platform_quality_metrics: row.platform_quality_metrics ? JSON.parse(row.platform_quality_metrics) : null,
+      quality_summary: row.quality_summary ? JSON.parse(row.quality_summary) : null
+    }));
+  }
 }

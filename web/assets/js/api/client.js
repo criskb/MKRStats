@@ -60,3 +60,13 @@ export async function getConnections() {
 
   return response.json();
 }
+
+export async function getCollectionStatus(limit = 10) {
+  const response = await fetch(`/api/collection/status?${queryString({ limit })}`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch collection status: ${response.status}`);
+  }
+
+  return response.json();
+}

@@ -87,13 +87,49 @@ async function fetchPlatformSnapshot(platform, activeConnection) {
   }
 }
 
-export async function fetchAllPlatformStats() {
+function logConnectorEvent(event, payload = {}) {
+  // eslint-disable-next-line no-console
+  console.log(JSON.stringify({
+    level: 'info',
+    event,
+    ts: new Date().toISOString(),
+    ...payload
+  }));
+}
+
+export async function fetchAllPlatformStats({ correlationId = null, runId = null } = {}) {
+  logConnectorEvent('collection.connector_batch.started', { correlationId, runId });
   const connections = await getConnectionStatuses();
 
-  return Promise.all(
+  const platformStats = await Promise.all(
     PLATFORM_CONFIG.map(async (platform) => {
       const activeConnection = findActiveConnection(connections, platform.id);
-      return fetchPlatformSnapshot(platform, activeConnection);
+      logConnectorEvent('collection.connector.started', {
+        correlationId,
+        runId,
+        platformId: platform.id,
+        hasActiveConnection: Boolean(activeConnection)
+      });
+
+      const startedAt = Date.now();
+      const result = await fetchPlatformSnapshot(platform, activeConnection);
+      logConnectorEvent('collection.connector.completed', {
+        correlationId,
+        runId,
+        platformId: platform.id,
+        durationMs: Date.now() - startedAt,
+        status: result.metadata?.connector?.status ?? 'unknown',
+        errorCode: result.metadata?.connector?.error?.code ?? null
+      });
+      return result;
     })
   );
+
+  logConnectorEvent('collection.connector_batch.completed', {
+    correlationId,
+    runId,
+    platformCount: platformStats.length
+  });
+
+  return platformStats;
 }

@@ -7,7 +7,7 @@ import { aggregatePortfolioData } from './services/analytics/aggregateService.js
 import { forecastNextDays } from './services/predictions/forecastService.js';
 import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
 import { getConnectionStatuses, upsertConnectionConfig } from './services/connectors/connectionConfigStore.js';
-import { initializeStorage, readPlatformHistory } from './services/storage/index.js';
+import { initializeStorage, readPlatformHistory, readRecentCollectionRuns } from './services/storage/index.js';
 import { runCollectionCycle } from './services/collection/runCollectionCycle.js';
 import { startCollectionScheduler } from './services/collection/scheduler.js';
 
@@ -92,7 +92,7 @@ function selectPlatforms(rawPlatformData, selectedPlatform, connected = []) {
 }
 
 
-function buildCollectionSummary(platformData, connected) {
+function buildCollectionSummary(platformData, connected, latestRunByPlatform = new Map()) {
   const dataPoints = platformData.reduce((acc, platform) => {
     const seriesRows = platform.snapshot?.series?.length ?? 0;
     const modelRows = platform.snapshot?.models?.length ?? 0;
@@ -114,6 +114,21 @@ function buildCollectionSummary(platformData, connected) {
     ? Math.round(perPlatformQuality.reduce((acc, row) => acc + row.score, 0) / perPlatformQuality.length)
     : 0;
 
+  const platformStatus = platformData.map((platform) => {
+    const latestRun = latestRunByPlatform.get(platform.id) ?? null;
+    const runConnectorStatus = latestRun?.connectorStatus;
+    const snapshotFetchedAt = platform.snapshot?.fetchedAt ?? null;
+
+    return {
+      platformId: platform.id,
+      status: platform.metadata?.connector?.status ?? runConnectorStatus ?? 'unknown',
+      lastSuccessAt: (platform.metadata?.connector?.status === 'ok' || runConnectorStatus === 'ok') ? snapshotFetchedAt : null,
+      lastAttemptAt: latestRun?.startedAt ?? snapshotFetchedAt,
+      errorCode: platform.metadata?.connector?.error?.code ?? latestRun?.errorCode ?? null,
+      errorMessage: platform.metadata?.connector?.error?.message ?? latestRun?.errorMessage ?? null
+    };
+  });
+
   return {
     source: 'configured_platform_connectors',
     requestedConnectedPlatforms: connected,
@@ -126,7 +141,24 @@ function buildCollectionSummary(platformData, connected) {
       stalePlatforms: perPlatformQuality.filter((row) => row.stale).length,
       failedPlatforms: perPlatformQuality.filter((row) => row.failed).length,
       perPlatform: perPlatformQuality
-    }
+    },
+    platformStatus
+  };
+}
+
+function formatRunSummary(run) {
+  return {
+    id: Number(run.id),
+    runType: run.run_type ?? run.runType,
+    status: run.status,
+    startedAt: run.started_at ?? run.startedAt,
+    completedAt: run.completed_at ?? run.completedAt,
+    fetchedPlatforms: Number(run.fetched_platforms ?? run.fetchedPlatforms ?? 0),
+    upsertedPlatformRows: Number(run.upserted_platform_rows ?? run.upsertedPlatformRows ?? 0),
+    upsertedModelRows: Number(run.upserted_model_rows ?? run.upsertedModelRows ?? 0),
+    errorMessage: run.error_message ?? run.errorMessage ?? null,
+    platformQualityMetrics: run.platform_quality_metrics ?? run.platformQualityMetrics ?? null,
+    qualitySummary: run.quality_summary ?? run.qualitySummary ?? null
   };
 }
 
@@ -152,7 +184,25 @@ async function getOverviewPayload(url) {
 
   const aggregated = aggregatePortfolioData(platformData);
   const benchmarks = buildGlobalBenchmarks(platformData);
-  const collection = buildCollectionSummary(platformData, connected);
+  const recentRuns = await readRecentCollectionRuns(10);
+  const latestRunByPlatform = new Map();
+
+  for (const run of recentRuns) {
+    const metrics = run.platform_quality_metrics ?? run.platformQualityMetrics ?? [];
+    if (!Array.isArray(metrics)) continue;
+    for (const metric of metrics) {
+      if (!latestRunByPlatform.has(metric.platformId)) {
+        latestRunByPlatform.set(metric.platformId, {
+          connectorStatus: metric.connectorStatus,
+          startedAt: run.started_at ?? run.startedAt,
+          errorCode: metric.checks?.connectorError?.code ?? null,
+          errorMessage: metric.checks?.connectorError?.message ?? null
+        });
+      }
+    }
+  }
+
+  const collection = buildCollectionSummary(platformData, connected, latestRunByPlatform);
 
   return {
     status: 200,
@@ -295,6 +345,20 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/export.csv') {
     await handleExportCsv(req, res, url);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/collection/status') {
+    try {
+      const requestedLimit = Number(url.searchParams.get('limit') ?? 20);
+      const runs = await readRecentCollectionRuns(requestedLimit);
+      sendJson(res, 200, {
+        generatedAt: new Date().toISOString(),
+        runs: runs.map(formatRunSummary)
+      });
+    } catch (error) {
+      sendJson(res, 500, { message: 'Failed to load collection run status', details: error.message });
+    }
     return;
   }
 

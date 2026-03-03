@@ -401,3 +401,12 @@ body {
 .delta-card.is-up p { color: #7de6b8; }
 .delta-card.is-down p { color: #ff9b9b; }
 .delta-card.is-flat p { color: #d6def0; }
+
+.status-banner {
+  grid-column: span 12;
+  border: 1px solid #6a4a1f;
+  background: rgba(255, 200, 87, 0.14);
+  color: #ffe1a2;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+}

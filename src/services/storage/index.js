@@ -119,3 +119,8 @@ export async function readPlatformHistory(platformIds = []) {
     };
   });
 }
+
+export async function readRecentCollectionRuns(limit = 20) {
+  const adapter = getStorageAdapter();
+  return adapter.getRecentCollectionRuns(limit);
+}
