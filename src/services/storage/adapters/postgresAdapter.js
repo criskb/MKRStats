@@ -12,10 +12,10 @@ export class PostgresStorageAdapter {
     await runPostgresMigrations(this.pool);
   }
 
-  async createIngestionRun({ runType, status, startedAt }) {
+  async createIngestionRun({ runType, status, startedAt, nextScheduledAt = null }) {
     const { rows } = await this.pool.query(
-      `INSERT INTO ingestion_runs (run_type, status, started_at) VALUES ($1, $2, $3) RETURNING id`,
-      [runType, status, startedAt]
+      `INSERT INTO ingestion_runs (run_type, status, started_at, next_scheduled_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [runType, status, startedAt, nextScheduledAt]
     );
     return rows[0].id;
   }
@@ -23,17 +23,23 @@ export class PostgresStorageAdapter {
   async completeIngestionRun(id, payload) {
     await this.pool.query(
       `UPDATE ingestion_runs
-       SET status = $1, completed_at = $2, fetched_platforms = $3, upserted_item_rows = $4, upserted_metric_rows = $5, error_message = $6, platform_quality_metrics = $7, quality_summary = $8
-       WHERE id = $9`,
+       SET status = $1, completed_at = $2, ended_at = $3, fetched_platforms = $4, upserted_item_rows = $5, upserted_metric_rows = $6, error_message = $7,
+           platform_quality_metrics = $8, quality_summary = $9, error_count = $10, rate_limited_count = $11, rate_limit_events = $12, next_scheduled_at = $13
+       WHERE id = $14`,
       [
         payload.status,
-        payload.completedAt,
+        payload.endedAt,
+        payload.endedAt,
         payload.fetchedPlatforms,
         payload.upsertedItemRows,
         payload.upsertedMetricRows,
         payload.errorMessage,
         payload.platformQualityMetrics ?? null,
         payload.qualitySummary ?? null,
+        payload.errorCount ?? 0,
+        payload.rateLimitedCount ?? 0,
+        payload.rateLimitEvents ?? null,
+        payload.nextScheduledAt ?? null,
         id
       ]
     );

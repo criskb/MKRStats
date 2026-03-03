@@ -17,7 +17,21 @@ async function loadMigrationSql(engine) {
 
 export async function runSqliteMigrations(db) {
   const sql = await loadMigrationSql('sqlite');
-  db.exec(sql);
+  const statements = sql
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    try {
+      db.exec(`${statement};`);
+    } catch (error) {
+      if (String(error.message).includes('duplicate column name')) {
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 export async function runPostgresMigrations(pool) {

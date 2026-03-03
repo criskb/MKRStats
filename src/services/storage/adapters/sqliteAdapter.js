@@ -17,12 +17,12 @@ export class SqliteStorageAdapter {
     await runSqliteMigrations(this.db);
   }
 
-  async createIngestionRun({ runType, status, startedAt }) {
+  async createIngestionRun({ runType, status, startedAt, nextScheduledAt = null }) {
     const stmt = this.db.prepare(`
-      INSERT INTO ingestion_runs (run_type, status, started_at)
-      VALUES (?, ?, ?)
+      INSERT INTO ingestion_runs (run_type, status, started_at, next_scheduled_at)
+      VALUES (?, ?, ?, ?)
     `);
-    const result = stmt.run(runType, status, startedAt);
+    const result = stmt.run(runType, status, startedAt, nextScheduledAt);
     return result.lastInsertRowid;
   }
 
@@ -30,29 +30,39 @@ export class SqliteStorageAdapter {
     id,
     {
       status,
-      completedAt,
+      endedAt,
       fetchedPlatforms,
       upsertedItemRows,
       upsertedMetricRows,
       errorMessage = null,
       platformQualityMetrics = null,
-      qualitySummary = null
+      qualitySummary = null,
+      errorCount = 0,
+      rateLimitedCount = 0,
+      rateLimitEvents = null,
+      nextScheduledAt = null
     }
   ) {
     const stmt = this.db.prepare(`
       UPDATE ingestion_runs
-      SET status = ?, completed_at = ?, fetched_platforms = ?, upserted_item_rows = ?, upserted_metric_rows = ?, error_message = ?, platform_quality_metrics = ?, quality_summary = ?
+      SET status = ?, completed_at = ?, ended_at = ?, fetched_platforms = ?, upserted_item_rows = ?, upserted_metric_rows = ?, error_message = ?,
+          platform_quality_metrics = ?, quality_summary = ?, error_count = ?, rate_limited_count = ?, rate_limit_events = ?, next_scheduled_at = ?
       WHERE id = ?
     `);
     stmt.run(
       status,
-      completedAt,
+      endedAt,
+      endedAt,
       fetchedPlatforms,
       upsertedItemRows,
       upsertedMetricRows,
       errorMessage,
       platformQualityMetrics ? JSON.stringify(platformQualityMetrics) : null,
       qualitySummary ? JSON.stringify(qualitySummary) : null,
+      errorCount,
+      rateLimitedCount,
+      rateLimitEvents ? JSON.stringify(rateLimitEvents) : null,
+      nextScheduledAt,
       id
     );
   }
@@ -148,7 +158,8 @@ export class SqliteStorageAdapter {
     return rows.map((row) => ({
       ...row,
       platform_quality_metrics: row.platform_quality_metrics ? JSON.parse(row.platform_quality_metrics) : null,
-      quality_summary: row.quality_summary ? JSON.parse(row.quality_summary) : null
+      quality_summary: row.quality_summary ? JSON.parse(row.quality_summary) : null,
+      rate_limit_events: row.rate_limit_events ? JSON.parse(row.rate_limit_events) : null
     }));
   }
 }

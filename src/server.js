@@ -152,13 +152,17 @@ function formatRunSummary(run) {
     runType: run.run_type ?? run.runType,
     status: run.status,
     startedAt: run.started_at ?? run.startedAt,
-    completedAt: run.completed_at ?? run.completedAt,
+    completedAt: run.ended_at ?? run.completed_at ?? run.completedAt,
     fetchedPlatforms: Number(run.fetched_platforms ?? run.fetchedPlatforms ?? 0),
     upsertedPlatformRows: Number(run.upserted_item_rows ?? run.upsertedItemRows ?? run.upserted_platform_rows ?? run.upsertedPlatformRows ?? 0),
     upsertedModelRows: Number(run.upserted_metric_rows ?? run.upsertedMetricRows ?? run.upserted_model_rows ?? run.upsertedModelRows ?? 0),
     errorMessage: run.error_message ?? run.errorMessage ?? null,
     platformQualityMetrics: run.platform_quality_metrics ?? run.platformQualityMetrics ?? null,
-    qualitySummary: run.quality_summary ?? run.qualitySummary ?? null
+    qualitySummary: run.quality_summary ?? run.qualitySummary ?? null,
+    errorCount: Number(run.error_count ?? run.errorCount ?? 0),
+    rateLimitedCount: Number(run.rate_limited_count ?? run.rateLimitedCount ?? 0),
+    rateLimitEvents: run.rate_limit_events ?? run.rateLimitEvents ?? null,
+    nextScheduledAt: run.next_scheduled_at ?? run.nextScheduledAt ?? null
   };
 }
 
@@ -367,7 +371,21 @@ const server = http.createServer(async (req, res) => {
 
 async function start() {
   await initializeStorage();
-  startCollectionScheduler();
+  const scheduler = startCollectionScheduler();
+
+  const shutdown = async (signal) => {
+    // eslint-disable-next-line no-console
+    console.log(`Received ${signal}; shutting down.`);
+    await scheduler.stop();
+    await new Promise((resolve) => server.close(resolve));
+  };
+
+  process.once('SIGINT', () => {
+    shutdown('SIGINT').finally(() => process.exit(0));
+  });
+  process.once('SIGTERM', () => {
+    shutdown('SIGTERM').finally(() => process.exit(0));
+  });
 
   server.listen(PORT, () => {
     // eslint-disable-next-line no-console
