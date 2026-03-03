@@ -1,16 +1,18 @@
-import { getPlatforms } from '../api/client.js';
+import { getPlatforms, saveConnections } from '../api/client.js';
 import {
   encryptPayload,
   decryptPayload,
   loadEncryptedConnections,
   saveEncryptedConnections,
+  saveConnectionMeta,
   clearEncryptedConnections
 } from './secureStore.js';
 
 function renderForm(root, platforms, values = {}) {
-  const rows = platforms.map((platform) => {
-    const current = values[platform.id] ?? { handle: '', apiKey: '' };
-    return `
+  const rows = platforms
+    .map((platform) => {
+      const current = values[platform.id] ?? { handle: '', apiKey: '' };
+      return `
       <div class="profile-row">
         <h3>${platform.name}</h3>
         <label>
@@ -23,7 +25,8 @@ function renderForm(root, platforms, values = {}) {
         </label>
       </div>
     `;
-  }).join('');
+    })
+    .join('');
 
   root.innerHTML = `
     <form id="profile-form" class="profile-form">
@@ -66,6 +69,19 @@ function applyValues(form, values, platforms) {
   }
 }
 
+function countConfigured(values) {
+  return Object.values(values).filter((row) => row.handle?.trim?.() || row.apiKey?.trim?.()).length;
+}
+
+async function syncConnectionsRemote(values) {
+  try {
+    await saveConnections(values);
+    return { ok: true, message: '' };
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
+}
+
 async function initProfile() {
   const root = document.querySelector('#profile-root');
   const status = (message, isError = false) => {
@@ -94,7 +110,12 @@ async function initProfile() {
         const values = collectValues(form, platforms);
         const encrypted = await encryptPayload({ values, updatedAt: new Date().toISOString() }, passphraseInput.value);
         saveEncryptedConnections(encrypted);
-        status('Settings saved encrypted in localStorage.');
+        saveConnectionMeta(values);
+
+        const remote = await syncConnectionsRemote(values);
+        const configured = countConfigured(values);
+        const remoteNote = remote.ok ? 'Server sync complete.' : `Server sync warning: ${remote.message}`;
+        status(`Settings saved encrypted in localStorage. ${configured} platform(s) configured for Our Stats scope. ${remoteNote}`);
       } catch (error) {
         status(`Unable to save settings: ${error.message}`, true);
       }
@@ -114,8 +135,17 @@ async function initProfile() {
 
       try {
         const payload = await decryptPayload(encrypted, passphraseInput.value);
-        applyValues(form, payload.values ?? {}, platforms);
-        status(`Settings decrypted. Last updated: ${payload.updatedAt ?? 'unknown'}`);
+        const values = payload.values ?? {};
+        applyValues(form, values, platforms);
+        saveConnectionMeta(values);
+
+        const remote = await syncConnectionsRemote(values);
+        const configured = countConfigured(values);
+        const remoteNote = remote.ok ? 'Server sync complete.' : `Server sync warning: ${remote.message}`;
+
+        status(
+          `Settings decrypted and scope metadata synced (${configured} configured). ${remoteNote} Last updated: ${payload.updatedAt ?? 'unknown'}`
+        );
       } catch {
         status('Decryption failed. Check passphrase.', true);
       }

@@ -15,6 +15,11 @@ const SORTS = {
 function render(container, models, sortBy) {
   container.innerHTML = '';
 
+  if (!models.length) {
+    container.innerHTML = '<p>No model data available for this scope yet.</p>';
+    return;
+  }
+
   const controls = document.createElement('div');
   controls.className = 'inline-controls';
   controls.innerHTML = `
@@ -51,6 +56,6 @@ function render(container, models, sortBy) {
   });
 }
 
-export function mountTopModelsWidget(container, models) {
+export function mountTopModelsWidget(container, models = []) {
   render(container, models, 'revenue');
 }

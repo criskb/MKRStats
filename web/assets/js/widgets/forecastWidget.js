@@ -1,13 +1,13 @@
 import { renderLineChart } from '../components/chart.js';
 
-export function mountForecastWidget(container, timeline, forecast) {
+export function mountForecastWidget(container, timeline = [], forecast = {}) {
   const canvas = document.createElement('canvas');
   canvas.style.height = '260px';
   container.append(canvas);
 
-  const values = forecast.revenue.forecast;
+  const values = forecast.revenue?.forecast ?? [];
   const futureLabels = values.map((row) => `+${row.dayOffset}`);
-  const past = timeline.map((row) => row.revenue);
+  const past = timeline.map((row) => Number(row.revenue) || 0);
 
   renderLineChart(canvas, [...timeline.map((d) => d.date.slice(5)), ...futureLabels], [
     {

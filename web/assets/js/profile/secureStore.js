@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'mkrstats_secure_connections_v1';
+const CONNECTION_META_KEY = 'mkrstats_connection_meta_v1';
 
 function toBase64(buffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
@@ -32,6 +33,22 @@ async function deriveKey(passphrase, salt) {
     false,
     ['encrypt', 'decrypt']
   );
+}
+
+function normalizeConnectionRows(values = {}) {
+  return Object.entries(values).map(([platformId, config]) => {
+    const handle = config?.handle?.trim?.() ?? '';
+    const apiKey = config?.apiKey?.trim?.() ?? '';
+    const hasHandle = Boolean(handle);
+    const hasApiKey = Boolean(apiKey);
+
+    return {
+      platformId,
+      hasHandle,
+      hasApiKey,
+      completenessScore: hasHandle && hasApiKey ? 100 : hasHandle || hasApiKey ? 50 : 0
+    };
+  });
 }
 
 export async function encryptPayload(payload, passphrase) {
@@ -75,6 +92,45 @@ export function saveEncryptedConnections(payload) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 }
 
+export function saveConnectionMeta(values = {}) {
+  const rows = normalizeConnectionRows(values);
+  const configuredPlatforms = rows.filter((row) => row.completenessScore > 0).map((row) => row.platformId);
+
+  const payload = {
+    configuredPlatforms,
+    platformHealth: rows,
+    configuredCount: configuredPlatforms.length,
+    coverageScore: rows.length ? Math.round(rows.reduce((acc, row) => acc + row.completenessScore, 0) / rows.length) : 0,
+    updatedAt: new Date().toISOString()
+  };
+
+  localStorage.setItem(CONNECTION_META_KEY, JSON.stringify(payload));
+}
+
+export function loadConnectionMeta() {
+  const raw = localStorage.getItem(CONNECTION_META_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.configuredPlatforms)) {
+      return null;
+    }
+
+    const configuredPlatforms = [...new Set(parsed.configuredPlatforms.map((id) => String(id).trim()).filter(Boolean))];
+    return {
+      ...parsed,
+      configuredPlatforms,
+      configuredCount: Number(parsed.configuredCount) || configuredPlatforms.length,
+      coverageScore: Number(parsed.coverageScore) || 0,
+      platformHealth: Array.isArray(parsed.platformHealth) ? parsed.platformHealth : []
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function clearEncryptedConnections() {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(CONNECTION_META_KEY);
 }
