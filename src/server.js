@@ -3,11 +3,13 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PLATFORM_CONFIG } from './config/platforms.js';
-import { fetchAllPlatformStats } from './services/connectors/platformConnectorService.js';
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
 import { forecastNextDays } from './services/predictions/forecastService.js';
 import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
 import { getConnectionStatuses, upsertConnectionConfig } from './services/connectors/connectionConfigStore.js';
+import { initializeStorage, readPlatformHistory } from './services/storage/index.js';
+import { runCollectionCycle } from './services/collection/runCollectionCycle.js';
+import { startCollectionScheduler } from './services/collection/scheduler.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __filename = fileURLToPath(import.meta.url);
@@ -113,7 +115,14 @@ function buildCollectionSummary(platformData, connected) {
 
 async function getOverviewPayload(url) {
   const { horizon, selectedPlatform, connected } = normalizeScope(url);
-  const rawPlatformData = await fetchAllPlatformStats();
+  const scopedIds = [...new Set([selectedPlatform !== 'all' ? selectedPlatform : null, ...connected].filter(Boolean))];
+  let rawPlatformData = await readPlatformHistory(scopedIds);
+
+  if (!rawPlatformData.some((platform) => (platform.snapshot?.series?.length ?? 0) > 0)) {
+    await runCollectionCycle({ runType: 'on_demand_bootstrap' });
+    rawPlatformData = await readPlatformHistory(scopedIds);
+  }
+
   const platformData = selectPlatforms(rawPlatformData, selectedPlatform, connected);
 
   if (platformData.length === 0) {
@@ -274,7 +283,18 @@ const server = http.createServer(async (req, res) => {
   await serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
+async function start() {
+  await initializeStorage();
+  startCollectionScheduler();
+
+  server.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`MKRStats listening on http://localhost:${PORT}`);
+  });
+}
+
+start().catch((error) => {
   // eslint-disable-next-line no-console
-  console.log(`MKRStats listening on http://localhost:${PORT}`);
+  console.error('Failed to start server:', error);
+  process.exitCode = 1;
 });
