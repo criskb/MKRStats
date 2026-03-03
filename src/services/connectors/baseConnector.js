@@ -109,10 +109,11 @@ export function normalizeSnapshot(platformId, snapshot = {}) {
   return validateAndNormalizeSnapshot(platformId, snapshot);
 }
 
-export function buildMockPlatformSnapshot(platformId) {
+export function buildMockPlatformSnapshot(platformId, seedSuffix = "") {
   const days = lastNDays(30);
   const series = days.map((date, index) => {
-    const seed = index + platformId.length;
+    const seedOffset = String(seedSuffix).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    const seed = index + platformId.length + seedOffset;
     const views = Math.floor(500 + seededRandom(seed) * 1800);
     const downloads = Math.floor(views * (0.1 + seededRandom(seed + 22) * 0.08));
     const sales = Math.floor(downloads * (0.08 + seededRandom(seed + 50) * 0.2));
@@ -122,7 +123,8 @@ export function buildMockPlatformSnapshot(platformId) {
   });
 
   const models = MODELS.map((name, index) => {
-    const seed = platformId.length * (index + 1);
+    const seedOffset = String(seedSuffix).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    const seed = platformId.length * (index + 1) + seedOffset;
     const downloads = Math.floor(250 + seededRandom(seed + 100) * 3000);
     const sales = Math.floor(downloads * (0.05 + seededRandom(seed + 200) * 0.25));
     const revenue = Number((sales * (2.5 + seededRandom(seed + 300) * 6)).toFixed(2));
