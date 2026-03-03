@@ -48,9 +48,10 @@ function mergeSnapshots(platformId, snapshots = []) {
 
   for (const snapshot of snapshots) {
     for (const row of snapshot.series ?? []) {
-      const existing = byDate.get(row.date) ?? { date: row.date, views: 0, downloads: 0, sales: 0, revenue: 0, currency: row.currency ?? 'USD' };
+      const existing = byDate.get(row.date) ?? { date: row.date, views: 0, downloads: 0, likes: 0, sales: 0, revenue: 0, currency: row.currency ?? 'USD' };
       existing.views += Number(row.views ?? 0);
       existing.downloads += Number(row.downloads ?? 0);
+      existing.likes += Number(row.likes ?? 0);
       existing.sales += Number(row.sales ?? 0);
       existing.revenue = Number((existing.revenue + Number(row.revenue ?? 0)).toFixed(2));
       byDate.set(row.date, existing);
@@ -58,8 +59,9 @@ function mergeSnapshots(platformId, snapshots = []) {
 
     for (const model of snapshot.models ?? []) {
       const key = String(model.id ?? model.title);
-      const existing = byModel.get(key) ?? { id: key, title: model.title ?? 'Untitled Model', downloads: 0, sales: 0, revenue: 0 };
+      const existing = byModel.get(key) ?? { id: key, title: model.title ?? 'Untitled Model', downloads: 0, likes: 0, sales: 0, revenue: 0 };
       existing.downloads += Number(model.downloads ?? 0);
+      existing.likes += Number(model.likes ?? 0);
       existing.sales += Number(model.sales ?? 0);
       existing.revenue = Number((existing.revenue + Number(model.revenue ?? 0)).toFixed(2));
       byModel.set(key, existing);
@@ -247,7 +249,7 @@ export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack
 
       const series = Array.isArray(platform.snapshot?.series) ? platform.snapshot.series : [];
       const limitedSeries = daysBack == null ? series : series.slice(-Math.max(1, daysBack));
-      const metricDates = limitedSeries.length ? limitedSeries : [{ date: isoDay(new Date()), views: 0, downloads: 0, sales: 0, revenue: 0 }];
+      const metricDates = limitedSeries.length ? limitedSeries : [{ date: isoDay(new Date()), views: 0, downloads: 0, likes: 0, sales: 0, revenue: 0 }];
       const models = Array.isArray(platform.snapshot?.models) ? platform.snapshot.models : [];
 
       for (const model of models) {

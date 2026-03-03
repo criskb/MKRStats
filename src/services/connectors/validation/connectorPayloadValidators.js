@@ -1,8 +1,9 @@
-const REQUIRED_FIELDS = ['date', 'views', 'downloads', 'sales', 'revenue'];
+const REQUIRED_FIELDS = ['date', 'views', 'downloads', 'likes', 'sales', 'revenue'];
 
 const DEFAULT_OUTLIER_LIMITS = {
   views: Number(process.env.MKRSTATS_OUTLIER_LIMIT_VIEWS ?? 500000),
   downloads: Number(process.env.MKRSTATS_OUTLIER_LIMIT_DOWNLOADS ?? 250000),
+  likes: Number(process.env.MKRSTATS_OUTLIER_LIMIT_LIKES ?? 500000),
   sales: Number(process.env.MKRSTATS_OUTLIER_LIMIT_SALES ?? 100000),
   revenue: Number(process.env.MKRSTATS_OUTLIER_LIMIT_REVENUE ?? 1000000)
 };
@@ -25,6 +26,7 @@ export function normalizeSeriesToCanonical(row = {}, defaultCurrency = 'USD') {
     date: normalizeDate(row.date),
     views: toSafeNumber(row.views),
     downloads: toSafeNumber(row.downloads),
+    likes: toSafeNumber(row.likes),
     sales: toSafeNumber(row.sales),
     revenue: toSafeNumber(row.revenue, { decimals: 2 }),
     currency: String(row.currency ?? defaultCurrency).toUpperCase()
@@ -67,7 +69,7 @@ function runQualityChecks(series = [], fetchedAt) {
     byDate.add(row.date);
 
     const clamped = { ...row };
-    for (const metric of ['views', 'downloads', 'sales', 'revenue']) {
+    for (const metric of ['views', 'downloads', 'likes', 'sales', 'revenue']) {
       const limit = DEFAULT_OUTLIER_LIMITS[metric];
       if (clamped[metric] > limit) {
         clamped[metric] = limit;
