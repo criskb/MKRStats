@@ -3,10 +3,14 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PLATFORM_CONFIG } from './config/platforms.js';
-import { fetchAllPlatformStats } from './services/connectors/platformConnectorService.js';
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
 import { forecastNextDays } from './services/predictions/forecastService.js';
 import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
+import { authenticateBridgeSubmission, getConnectionStatuses, upsertConnectionConfig } from './services/connectors/connectionConfigStore.js';
+import { initializeStorage, readLatestBridgeIngestCapturedAt, readPlatformHistory, readRecentCollectionRuns } from './services/storage/index.js';
+import { runCollectionCycle } from './services/collection/runCollectionCycle.js';
+import { startCollectionScheduler } from './services/collection/scheduler.js';
+import { processBridgeIngest } from './services/connectors/bridgeIngestService.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __filename = fileURLToPath(import.meta.url);
@@ -110,6 +114,54 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 1_000_000) {
+        reject(new Error('Request body too large'));
+      }
+    });
+
+    req.on('end', () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+
+    req.on('error', (error) => reject(error));
+  });
+}
+
+
+
+function isAllowedBridgeOrigin(req) {
+  const configured = String(process.env.MKRSTATS_BRIDGE_ALLOWED_ORIGINS ?? '').trim();
+  if (!configured) return true;
+
+  const origin = String(req.headers.origin ?? '').trim();
+  if (!origin) return false;
+
+  const allowedOrigins = configured.split(',').map((value) => value.trim()).filter(Boolean);
+  if (allowedOrigins.includes('*')) return true;
+  return allowedOrigins.includes(origin);
+}
+
+function getBridgeCredentials(req) {
+  const token = String(req.headers['x-bridge-api-token'] ?? '').trim();
+  const session = String(req.headers['x-bridge-session'] ?? '').trim();
+  return { token, session };
+}
+
 function sendCsv(res, filename, text) {
   res.writeHead(200, {
     'Content-Type': 'text/csv; charset=utf-8',
@@ -151,6 +203,82 @@ function buildCollectionSummary(platformData, connected) {
     maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0
   };
 }
+
+
+function buildCollectionSummary(platformData, connected, latestRunByPlatform = new Map()) {
+  const dataPoints = platformData.reduce((acc, platform) => {
+    const seriesRows = platform.snapshot?.series?.length ?? 0;
+    const modelRows = platform.snapshot?.models?.length ?? 0;
+    return acc + seriesRows * 4 + modelRows * 4;
+  }, 0);
+
+  const freshnessMinutes = platformData
+    .map((platform) => Date.parse(platform.snapshot?.fetchedAt ?? '') || Date.now())
+    .map((timestamp) => Math.max(0, Math.round((Date.now() - timestamp) / 60000)));
+
+  const perPlatformQuality = platformData.map((platform) => ({
+    platformId: platform.id,
+    score: platform.snapshot?.quality?.qualityScore ?? 0,
+    stale: Boolean(platform.snapshot?.quality?.checks?.staleSnapshot?.stale),
+    failed: Boolean(platform.snapshot?.quality?.hasFailures) || platform.metadata?.connector?.status === 'error'
+  }));
+
+  const averageQualityScore = perPlatformQuality.length
+    ? Math.round(perPlatformQuality.reduce((acc, row) => acc + row.score, 0) / perPlatformQuality.length)
+    : 0;
+
+  const platformStatus = platformData.map((platform) => {
+    const latestRun = latestRunByPlatform.get(platform.id) ?? null;
+    const runConnectorStatus = latestRun?.connectorStatus;
+    const snapshotFetchedAt = platform.snapshot?.fetchedAt ?? null;
+
+    return {
+      platformId: platform.id,
+      status: platform.metadata?.connector?.status ?? runConnectorStatus ?? 'unknown',
+      lastSuccessAt: (platform.metadata?.connector?.status === 'ok' || runConnectorStatus === 'ok') ? snapshotFetchedAt : null,
+      lastAttemptAt: latestRun?.startedAt ?? snapshotFetchedAt,
+      errorCode: platform.metadata?.connector?.error?.code ?? latestRun?.errorCode ?? null,
+      errorMessage: platform.metadata?.connector?.error?.message ?? latestRun?.errorMessage ?? null
+    };
+  });
+
+  return {
+    source: 'configured_platform_connectors',
+    requestedConnectedPlatforms: connected,
+    activePlatforms: platformData.map((platform) => platform.id),
+    platformCoveragePct: connected.length ? Math.round((platformData.length / connected.length) * 100) : 100,
+    estimatedDataPoints: dataPoints,
+    maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0,
+    quality: {
+      averageQualityScore,
+      stalePlatforms: perPlatformQuality.filter((row) => row.stale).length,
+      failedPlatforms: perPlatformQuality.filter((row) => row.failed).length,
+      perPlatform: perPlatformQuality
+    },
+    platformStatus
+  };
+}
+
+function formatRunSummary(run) {
+  return {
+    id: Number(run.id),
+    runType: run.run_type ?? run.runType,
+    status: run.status,
+    startedAt: run.started_at ?? run.startedAt,
+    completedAt: run.ended_at ?? run.completed_at ?? run.completedAt,
+    fetchedPlatforms: Number(run.fetched_platforms ?? run.fetchedPlatforms ?? 0),
+    upsertedPlatformRows: Number(run.upserted_item_rows ?? run.upsertedItemRows ?? run.upserted_platform_rows ?? run.upsertedPlatformRows ?? 0),
+    upsertedModelRows: Number(run.upserted_metric_rows ?? run.upsertedMetricRows ?? run.upserted_model_rows ?? run.upsertedModelRows ?? 0),
+    errorMessage: run.error_message ?? run.errorMessage ?? null,
+    platformQualityMetrics: run.platform_quality_metrics ?? run.platformQualityMetrics ?? null,
+    qualitySummary: run.quality_summary ?? run.qualitySummary ?? null,
+    errorCount: Number(run.error_count ?? run.errorCount ?? 0),
+    rateLimitedCount: Number(run.rate_limited_count ?? run.rateLimitedCount ?? 0),
+    rateLimitEvents: run.rate_limit_events ?? run.rateLimitEvents ?? null,
+    nextScheduledAt: run.next_scheduled_at ?? run.nextScheduledAt ?? null
+  };
+}
+
 
 async function getOverviewPayload(url) {
   const { horizon, selectedPlatform, connected } = normalizeScope(url);
@@ -258,6 +386,16 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.end();
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
     return;
@@ -287,15 +425,116 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/connections') {
+    try {
+      const payload = await readJsonBody(req);
+      const saved = await upsertConnectionConfig(payload);
+      sendJson(res, 200, { connection: saved });
+    } catch (error) {
+      sendJson(res, 400, { message: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/connections') {
+    try {
+      const connections = await getConnectionStatuses();
+      sendJson(res, 200, { connections });
+    } catch (error) {
+      sendJson(res, 500, { message: 'Failed to load connections', details: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/bridge_ingest') {
+    try {
+      if (!isAllowedBridgeOrigin(req)) {
+        sendJson(res, 403, { message: 'Bridge ingest origin is not allowed.' });
+        return;
+      }
+
+      const payload = await readJsonBody(req);
+      const credentials = getBridgeCredentials(req);
+      const authenticated = await authenticateBridgeSubmission({
+        platformId: payload.platform,
+        accountHandle: payload.accountHandle,
+        apiToken: credentials.token,
+        sessionId: credentials.session
+      });
+
+      if (!authenticated) {
+        sendJson(res, 401, { message: 'Invalid bridge authentication credentials.' });
+        return;
+      }
+
+      const result = await processBridgeIngest(payload);
+      sendJson(res, 202, { accepted: true, result });
+    } catch (error) {
+      sendJson(res, 400, { message: error.message });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/export.csv') {
     await handleExportCsv(req, res, url);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/collection/status') {
+    try {
+      const requestedLimit = Number(url.searchParams.get('limit') ?? 20);
+      const runs = await readRecentCollectionRuns(requestedLimit);
+      const latestBridgeIngestAt = await readLatestBridgeIngestCapturedAt();
+      const latestRun = runs[0] ? formatRunSummary(runs[0]) : null;
+      const freshnessMinutes = latestBridgeIngestAt
+        ? Math.max(0, Math.round((Date.now() - Date.parse(latestBridgeIngestAt)) / 60000))
+        : null;
+
+      sendJson(res, 200, {
+        generatedAt: new Date().toISOString(),
+        latestRun,
+        bridgeIngest: {
+          latestCapturedAt: latestBridgeIngestAt,
+          freshnessMinutes,
+          healthy: freshnessMinutes == null ? false : freshnessMinutes <= Number(process.env.MKRSTATS_BRIDGE_FRESHNESS_SLA_MINUTES ?? 120)
+        },
+        runs: runs.map(formatRunSummary)
+      });
+    } catch (error) {
+      sendJson(res, 500, { message: 'Failed to load collection run status', details: error.message });
+    }
     return;
   }
 
   await serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
+async function start() {
+  await initializeStorage();
+  const scheduler = startCollectionScheduler();
+
+  const shutdown = async (signal) => {
+    // eslint-disable-next-line no-console
+    console.log(`Received ${signal}; shutting down.`);
+    await scheduler.stop();
+    await new Promise((resolve) => server.close(resolve));
+  };
+
+  process.once('SIGINT', () => {
+    shutdown('SIGINT').finally(() => process.exit(0));
+  });
+  process.once('SIGTERM', () => {
+    shutdown('SIGTERM').finally(() => process.exit(0));
+  });
+
+  server.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`MKRStats listening on http://localhost:${PORT}`);
+  });
+}
+
+start().catch((error) => {
   // eslint-disable-next-line no-console
-  console.log(`MKRStats listening on http://localhost:${PORT}`);
+  console.error('Failed to start server:', error);
+  process.exitCode = 1;
 });
