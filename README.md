@@ -55,6 +55,7 @@ src/
 
 web/
   index.html
+  profile.html                    # Settings/profile page
   assets/
     css/
       main.css                    # Dashboard styling
@@ -77,7 +78,11 @@ web/
         funnelWidget.js           # Views->downloads->sales funnel
         scenarioWidget.js         # Forecast scenarios + confidence
         deltaWidget.js            # 7-day KPI momentum deltas
+        globalComparisonWidget.js # Global benchmark vs own stats
         platformGridWidget.js     # Connector status/coverage table
+      profile/
+        secureStore.js            # AES-GCM encrypted local storage helper
+        main.js                   # profile/settings interactions
       main.js                     # Dashboard composition
 
 test/
@@ -103,6 +108,8 @@ test/
 - `forecast`:
   - `revenue` (baseline + 90% interval + scenarios + confidence score)
   - `sales` (baseline + 90% interval + scenarios + confidence score)
+- `benchmarks`:
+  - per-platform global averages for views/downloads/sales/revenue/conversion
 
 ## Run locally
 
@@ -117,3 +124,11 @@ Open http://localhost:3000
 ```bash
 npm test
 ```
+
+
+## Profile/settings security
+
+- Open `/profile.html` to configure platform handles and API keys per platform.
+- Sensitive values are encrypted in the browser using AES-GCM.
+- The encryption key is derived from your passphrase with PBKDF2 and the passphrase is never stored.
+- Encrypted blobs are stored in `localStorage` and can be cleared locally at any time.

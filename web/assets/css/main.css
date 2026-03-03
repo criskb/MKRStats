@@ -266,3 +266,71 @@ body {
   font-size: 1.15rem;
   font-weight: 700;
 }
+
+.top-nav {
+  margin-top: 0.8rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.top-nav a {
+  color: #cde3ff;
+  text-decoration: none;
+  font-size: 0.92rem;
+  border: 1px solid #334057;
+  border-radius: 999px;
+  padding: 0.28rem 0.62rem;
+}
+
+.top-nav a[aria-current="page"] {
+  background: #23324a;
+}
+
+.security-note {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.profile-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.profile-row {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid #2a3240;
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: #111722;
+}
+
+.profile-row h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.profile-row label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.profile-row input {
+  width: 100%;
+  background: #121926;
+  color: var(--text);
+  border: 1px solid #334057;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+}
+
+.button-danger {
+  background: #572730;
+  color: #ffdce2;
+  border: 1px solid #833a4a;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  width: fit-content;
+}

@@ -6,6 +6,7 @@ import { PLATFORM_CONFIG } from './config/platforms.js';
 import { fetchAllPlatformStats } from './services/connectors/platformConnectorService.js';
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
 import { forecastNextDays } from './services/predictions/forecastService.js';
+import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __filename = fileURLToPath(import.meta.url);
@@ -59,6 +60,7 @@ async function getOverviewPayload(url) {
   }
 
   const aggregated = aggregatePortfolioData(platformData);
+  const benchmarks = buildGlobalBenchmarks(platformData);
 
   return {
     status: 200,
@@ -68,6 +70,7 @@ async function getOverviewPayload(url) {
       horizon,
       sampleWindowDays: aggregated.timeline.length,
       platforms: platformData,
+      benchmarks,
       aggregated,
       forecast: {
         revenue: forecastNextDays(aggregated.timeline, 'revenue', horizon),
@@ -153,7 +156,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/platforms') {
-    sendJson(res, 200, { platforms: PLATFORM_CONFIG });
+    sendJson(res, 200, {
+      platforms: PLATFORM_CONFIG,
+      benchmarks: buildGlobalBenchmarks(PLATFORM_CONFIG)
+    });
     return;
   }
 

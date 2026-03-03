@@ -11,6 +11,7 @@ import { mountPlatformRevenueWidget } from './widgets/platformRevenueWidget.js';
 import { mountFunnelWidget } from './widgets/funnelWidget.js';
 import { mountScenarioWidget } from './widgets/scenarioWidget.js';
 import { mountDeltaWidget } from './widgets/deltaWidget.js';
+import { mountGlobalComparisonWidget } from './widgets/globalComparisonWidget.js';
 
 const state = {
   platform: 'all',
@@ -36,7 +37,8 @@ function renderDashboard(dashboard, platforms, data) {
   const forecast = createWidget(`Revenue Forecast (${data.horizon}d)`, 'col-4');
   const topModels = createWidget('Top Models by Revenue', 'col-8');
   const platformRevenue = createWidget('Platform Revenue Comparison', 'col-4');
-  const platformGrid = createWidget('Connected Platform Coverage', 'col-12');
+  const platformGrid = createWidget('Connected Platform Coverage', 'col-6');
+  const globalCompare = createWidget('Global vs Our Stats', 'col-6');
 
   dashboard.append(
     controls.node,
@@ -49,7 +51,8 @@ function renderDashboard(dashboard, platforms, data) {
     forecast.node,
     topModels.node,
     platformRevenue.node,
-    platformGrid.node
+    platformGrid.node,
+    globalCompare.node
   );
 
   mountControlsWidget(controls.content, platforms, state, (nextState) => {
@@ -68,6 +71,7 @@ function renderDashboard(dashboard, platforms, data) {
   mountTopModelsWidget(topModels.content, data.aggregated.topModels);
   mountPlatformRevenueWidget(platformRevenue.content, data.aggregated.platformSummaries);
   mountPlatformGridWidget(platformGrid.content, data.platforms, data.aggregated.platformSummaries);
+  mountGlobalComparisonWidget(globalCompare.content, data.platforms, data.benchmarks, data.aggregated.platformSummaries);
 }
 
 async function init() {
