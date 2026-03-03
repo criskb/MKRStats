@@ -1,6 +1,7 @@
 import { fetchAllPlatformStats } from '../connectors/platformConnectorService.js';
 import { getStorage } from '../storage/index.js';
 import { isoDay } from '../../utils/date.js';
+import { randomUUID } from 'crypto';
 
 function buildPlatformRows(platform, { seriesRows = null } = {}) {
   const rows = seriesRows ?? platform.snapshot.series;
@@ -59,10 +60,21 @@ function buildRunQualityMetrics(platformData) {
 export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack = null } = {}) {
   const storage = getStorage();
   const startedAt = new Date().toISOString();
+  const correlationId = randomUUID();
   const runId = await storage.createCollectionRun({ runType, status: 'running', startedAt });
 
+  // eslint-disable-next-line no-console
+  console.log(JSON.stringify({
+    level: 'info',
+    event: 'collection.cycle.started',
+    ts: startedAt,
+    correlationId,
+    runId,
+    runType
+  }));
+
   try {
-    const platformData = await fetchAllPlatformStats();
+    const platformData = await fetchAllPlatformStats({ correlationId, runId });
     const qualityMetrics = buildRunQualityMetrics(platformData);
     let upsertedPlatformRows = 0;
     let upsertedModelRows = 0;
@@ -91,8 +103,22 @@ export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack
       qualitySummary: qualityMetrics.summary
     });
 
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({
+      level: 'info',
+      event: 'collection.cycle.completed',
+      ts: new Date().toISOString(),
+      correlationId,
+      runId,
+      status: 'success',
+      fetchedPlatforms: platformData.length,
+      upsertedPlatformRows,
+      upsertedModelRows
+    }));
+
     return {
       runId,
+      correlationId,
       fetchedPlatforms: platformData.length,
       upsertedPlatformRows,
       upsertedModelRows,
@@ -109,6 +135,16 @@ export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack
       platformQualityMetrics: [],
       qualitySummary: { averageQualityScore: 0, stalePlatforms: 0, failedPlatforms: 0, healthyPlatforms: 0 }
     });
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({
+      level: 'error',
+      event: 'collection.cycle.completed',
+      ts: new Date().toISOString(),
+      correlationId,
+      runId,
+      status: 'failed',
+      errorMessage: error.message
+    }));
     throw error;
   }
 }

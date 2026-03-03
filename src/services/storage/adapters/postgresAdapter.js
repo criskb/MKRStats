@@ -136,4 +136,13 @@ export class PostgresStorageAdapter {
     const { rows } = await this.pool.query('SELECT * FROM model_daily_metrics');
     return rows;
   }
+
+  async getRecentCollectionRuns(limit = 20) {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+    const { rows } = await this.pool.query(
+      `SELECT * FROM collection_runs ORDER BY started_at DESC LIMIT $1`,
+      [safeLimit]
+    );
+    return rows;
+  }
 }

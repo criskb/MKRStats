@@ -1,4 +1,4 @@
-import { getOverview } from './api/client.js';
+import { getCollectionStatus, getOverview } from './api/client.js';
 import { createWidget } from './components/widget.js';
 import { mountOverviewWidget } from './widgets/overviewWidget.js';
 import { mountPerformanceChart } from './widgets/performanceChartWidget.js';
@@ -8,6 +8,7 @@ import { mountDeltaWidget } from './widgets/deltaWidget.js';
 import { mountFunnelWidget } from './widgets/funnelWidget.js';
 import { mountScenarioWidget } from './widgets/scenarioWidget.js';
 import { mountBrandSummaryWidget } from './widgets/brandSummaryWidget.js';
+import { mountCollectionDiagnosticsWidget, renderCollectionAlertBanner } from './widgets/collectionDiagnosticsWidget.js';
 import { loadConnectionMeta } from './profile/secureStore.js';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -48,11 +49,14 @@ async function renderOurStats() {
 
   try {
     const scope = getConnectionScope();
-    const data = await getOverview({
-      platform: 'all',
-      horizon: 30,
-      connected: scope.configuredPlatforms
-    });
+    const [data, statusPayload] = await Promise.all([
+      getOverview({
+        platform: 'all',
+        horizon: 30,
+        connected: scope.configuredPlatforms
+      }),
+      getCollectionStatus(10)
+    ]);
 
     root.innerHTML = '';
 
@@ -63,6 +67,7 @@ async function renderOurStats() {
     const deltas = createWidget('Our KPI Momentum', 'col-4');
     const funnel = createWidget('Our Conversion Funnel', 'col-4');
     const scenarios = createWidget('Our Forecast Scenarios', 'col-4');
+    const diagnostics = createWidget('Collection Diagnostics', 'col-12');
     const topModels = createWidget('Our Top Models', 'col-12');
 
     root.append(
@@ -73,9 +78,11 @@ async function renderOurStats() {
       deltas.node,
       funnel.node,
       scenarios.node,
+      diagnostics.node,
       topModels.node
     );
 
+    renderCollectionAlertBanner(root, data.collection);
     renderScopeNotice(root, scope);
     mountBrandSummaryWidget(summary.content, data);
     mountOverviewWidget(kpi.content, data.aggregated.totals);
@@ -84,6 +91,7 @@ async function renderOurStats() {
     mountDeltaWidget(deltas.content, data.aggregated.kpiDeltas);
     mountFunnelWidget(funnel.content, data.aggregated.funnel);
     mountScenarioWidget(scenarios.content, data.forecast.revenue);
+    mountCollectionDiagnosticsWidget(diagnostics.content, data.collection, statusPayload);
     mountTopModelsWidget(topModels.content, data.aggregated.topModels);
   } catch (error) {
     root.innerHTML = `<div class="widget col-12"><div class="widget__content">Failed to load our stats: ${error.message}</div></div>`;
