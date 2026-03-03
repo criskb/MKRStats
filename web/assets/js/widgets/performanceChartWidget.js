@@ -58,7 +58,7 @@ function datasetFromMode(mode, timeline) {
   }));
 }
 
-export function mountPerformanceChart(container, timeline) {
+export function mountPerformanceChart(container, timeline = []) {
   const controls = document.createElement('div');
   controls.className = 'segmented-controls';
 
@@ -75,6 +75,11 @@ export function mountPerformanceChart(container, timeline) {
 
   let currentMode = 'commerce';
   const labels = timeline.map((row) => row.date.slice(5));
+
+  if (!timeline.length) {
+    container.innerHTML = '<p>No trend data available for this scope yet.</p>';
+    return;
+  }
 
   const chart = renderLineChart(canvas, labels, datasetFromMode(MODES[currentMode], timeline));
   const modeLabel = controls.querySelector('#trend-mode-label');

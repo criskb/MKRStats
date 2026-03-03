@@ -20,11 +20,86 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8'
 };
 
+
+const connectionStore = new Map();
+
+async function readRequestJson(req) {
+  const chunks = [];
+
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+
+  const raw = Buffer.concat(chunks).toString('utf-8').trim();
+  if (!raw) return {};
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid JSON body');
+  }
+}
+
+function normalizeConnectionsInput(input) {
+  const entries = Object.entries(input ?? {});
+  const allowedPlatforms = new Set(PLATFORM_CONFIG.map((platform) => platform.id));
+
+  const normalized = {};
+  for (const [platformId, value] of entries) {
+    if (!allowedPlatforms.has(platformId)) continue;
+
+    const handle = String(value?.handle ?? '').trim();
+    const apiKey = String(value?.apiKey ?? '').trim();
+
+    if (!handle && !apiKey) continue;
+
+    normalized[platformId] = {
+      handle,
+      hasApiKey: Boolean(apiKey),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  return normalized;
+}
+
+async function handleSaveConnections(req, res) {
+  try {
+    const body = await readRequestJson(req);
+    const connections = normalizeConnectionsInput(body.connections);
+
+    const snapshot = {
+      updatedAt: new Date().toISOString(),
+      connections
+    };
+
+    connectionStore.set('default', snapshot);
+
+    sendJson(res, 200, {
+      message: 'Connections saved',
+      configuredPlatforms: Object.keys(connections),
+      configuredCount: Object.keys(connections).length
+    });
+  } catch (error) {
+    sendJson(res, 400, { message: error.message || 'Unable to save connections' });
+  }
+}
+
+function handleGetConnections(_req, res) {
+  const snapshot = connectionStore.get('default') ?? { updatedAt: null, connections: {} };
+  sendJson(res, 200, snapshot);
+}
+
 function normalizeScope(url) {
   const requestedHorizon = Number(url.searchParams.get('horizon') ?? 14);
   const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(60, Math.floor(requestedHorizon))) : 14;
   const selectedPlatform = url.searchParams.get('platform') ?? 'all';
-  return { horizon, selectedPlatform };
+  const connected = (url.searchParams.get('connected') ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return { horizon, selectedPlatform, connected };
 }
 
 function sendJson(res, status, payload) {
@@ -44,34 +119,67 @@ function sendCsv(res, filename, text) {
   res.end(text);
 }
 
-function selectPlatforms(rawPlatformData, selectedPlatform) {
-  return selectedPlatform === 'all'
+function selectPlatforms(rawPlatformData, selectedPlatform, connected = []) {
+  const scoped = selectedPlatform === 'all'
     ? rawPlatformData
     : rawPlatformData.filter((platform) => platform.id === selectedPlatform);
+
+  if (!connected.length) return scoped;
+
+  const connectedSet = new Set(connected);
+  return scoped.filter((platform) => connectedSet.has(platform.id));
+}
+
+
+function buildCollectionSummary(platformData, connected) {
+  const dataPoints = platformData.reduce((acc, platform) => {
+    const seriesRows = platform.snapshot?.series?.length ?? 0;
+    const modelRows = platform.snapshot?.models?.length ?? 0;
+    return acc + seriesRows * 4 + modelRows * 4;
+  }, 0);
+
+  const freshnessMinutes = platformData
+    .map((platform) => Date.parse(platform.snapshot?.fetchedAt ?? '') || Date.now())
+    .map((timestamp) => Math.max(0, Math.round((Date.now() - timestamp) / 60000)));
+
+  return {
+    source: 'configured_platform_connectors',
+    requestedConnectedPlatforms: connected,
+    activePlatforms: platformData.map((platform) => platform.id),
+    platformCoveragePct: connected.length ? Math.round((platformData.length / connected.length) * 100) : 100,
+    estimatedDataPoints: dataPoints,
+    maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0
+  };
 }
 
 async function getOverviewPayload(url) {
-  const { horizon, selectedPlatform } = normalizeScope(url);
+  const { horizon, selectedPlatform, connected } = normalizeScope(url);
   const rawPlatformData = await fetchAllPlatformStats();
-  const platformData = selectPlatforms(rawPlatformData, selectedPlatform);
+  const platformData = selectPlatforms(rawPlatformData, selectedPlatform, connected);
 
   if (platformData.length === 0) {
-    return { status: 404, error: { message: `Platform '${selectedPlatform}' not found` } };
+    const detail = connected.length
+      ? `No data found for configured connections: ${connected.join(', ')}`
+      : `Platform '${selectedPlatform}' not found`;
+    return { status: 404, error: { message: detail } };
   }
 
   const aggregated = aggregatePortfolioData(platformData);
   const benchmarks = buildGlobalBenchmarks(platformData);
+  const collection = buildCollectionSummary(platformData, connected);
 
   return {
     status: 200,
     payload: {
       generatedAt: new Date().toISOString(),
       selectedPlatform,
+      connected,
       horizon,
       sampleWindowDays: aggregated.timeline.length,
       platforms: platformData,
       benchmarks,
       aggregated,
+      collection,
       forecast: {
         revenue: forecastNextDays(aggregated.timeline, 'revenue', horizon),
         sales: forecastNextDays(aggregated.timeline, 'sales', horizon)
@@ -160,6 +268,17 @@ const server = http.createServer(async (req, res) => {
       platforms: PLATFORM_CONFIG,
       benchmarks: buildGlobalBenchmarks(PLATFORM_CONFIG)
     });
+    return;
+  }
+
+
+  if (req.method === 'GET' && url.pathname === '/api/connections') {
+    handleGetConnections(req, res);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/connections') {
+    await handleSaveConnections(req, res);
     return;
   }
 
