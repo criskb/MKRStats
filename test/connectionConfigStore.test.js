@@ -41,3 +41,34 @@ test('upsertConnectionConfig persists encrypted credential blob and returns sani
   assert.equal(typeof raw.connections[0].encryptedCredentialBlob.cipherText, 'string');
   assert.equal(raw.connections[0].encryptedCredentialBlob.cipherText.includes('secret-token'), false);
 });
+
+
+test('authenticateBridgeSubmission validates api token and session pair', async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'mkrstats-connection-store-'));
+  const storePath = path.join(tempDir, 'connections.json');
+  const { upsertConnectionConfig, authenticateBridgeSubmission } = await loadStoreModule(storePath);
+
+  await upsertConnectionConfig({
+    platformId: 'makerworld',
+    accountId: 'alice',
+    authType: 'bridge',
+    credential: { apiToken: 'abc123', sessionId: 'sess-1' },
+    status: 'active'
+  });
+
+  const accepted = await authenticateBridgeSubmission({
+    platformId: 'makerworld',
+    accountHandle: 'alice',
+    apiToken: 'abc123',
+    sessionId: 'sess-1'
+  });
+  assert.equal(accepted.accountId, 'alice');
+
+  const rejected = await authenticateBridgeSubmission({
+    platformId: 'makerworld',
+    accountHandle: 'alice',
+    apiToken: 'wrong',
+    sessionId: 'sess-1'
+  });
+  assert.equal(rejected, null);
+});

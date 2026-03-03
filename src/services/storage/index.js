@@ -147,3 +147,8 @@ export async function readRecentCollectionRuns(limit = 20) {
   const repos = getRepositories();
   return repos.ingestionRuns.getRecentRuns(limit);
 }
+
+export async function readLatestBridgeIngestCapturedAt() {
+  const repos = getRepositories();
+  return repos.itemSnapshotRaw.getLatestCapturedAt();
+}
