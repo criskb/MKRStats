@@ -1,4 +1,4 @@
-import { getPlatforms, upsertConnection } from '../api/client.js';
+import { getPlatforms, saveConnections } from '../api/client.js';
 import {
   encryptPayload,
   decryptPayload,
@@ -69,6 +69,19 @@ function applyValues(form, values, platforms) {
   }
 }
 
+function countConfigured(values) {
+  return Object.values(values).filter((row) => row.handle?.trim?.() || row.apiKey?.trim?.()).length;
+}
+
+async function syncConnectionsRemote(values) {
+  try {
+    await saveConnections(values);
+    return { ok: true, message: '' };
+  } catch (error) {
+    return { ok: false, message: error.message };
+  }
+}
+
 async function initProfile() {
   const root = document.querySelector('#profile-root');
   const status = (message, isError = false) => {
@@ -99,35 +112,10 @@ async function initProfile() {
         saveEncryptedConnections(encrypted);
         saveConnectionMeta(values);
 
-        const upserts = Object.entries(values)
-          .map(([platformId, config]) => {
-            const accountId = config.handle?.trim?.() || 'default';
-            const apiKey = config.apiKey?.trim?.() || '';
-            const handle = config.handle?.trim?.() || '';
-
-            if (!handle && !apiKey) {
-              return null;
-            }
-
-            return upsertConnection({
-              platformId,
-              accountId,
-              authType: 'apiKey',
-              credential: {
-                handle,
-                apiKey
-              },
-              status: apiKey ? 'active' : 'pending',
-              lastValidatedAt: null,
-              lastError: null
-            });
-          })
-          .filter(Boolean);
-
-        await Promise.all(upserts);
-
-        const configured = Object.values(values).filter((row) => row.handle?.trim?.() || row.apiKey?.trim?.()).length;
-        status(`Settings saved. ${configured} platform(s) encrypted in browser and synced to backend.`);
+        const remote = await syncConnectionsRemote(values);
+        const configured = countConfigured(values);
+        const remoteNote = remote.ok ? 'Server sync complete.' : `Server sync warning: ${remote.message}`;
+        status(`Settings saved encrypted in localStorage. ${configured} platform(s) configured for Our Stats scope. ${remoteNote}`);
       } catch (error) {
         status(`Unable to save settings: ${error.message}`, true);
       }
@@ -150,8 +138,14 @@ async function initProfile() {
         const values = payload.values ?? {};
         applyValues(form, values, platforms);
         saveConnectionMeta(values);
-        const configured = Object.values(values).filter((row) => row.handle?.trim?.() || row.apiKey?.trim?.()).length;
-        status(`Settings decrypted and scope metadata synced (${configured} configured). Last updated: ${payload.updatedAt ?? 'unknown'}`);
+
+        const remote = await syncConnectionsRemote(values);
+        const configured = countConfigured(values);
+        const remoteNote = remote.ok ? 'Server sync complete.' : `Server sync warning: ${remote.message}`;
+
+        status(
+          `Settings decrypted and scope metadata synced (${configured} configured). ${remoteNote} Last updated: ${payload.updatedAt ?? 'unknown'}`
+        );
       } catch {
         status('Decryption failed. Check passphrase.', true);
       }

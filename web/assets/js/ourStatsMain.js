@@ -8,7 +8,6 @@ import { mountDeltaWidget } from './widgets/deltaWidget.js';
 import { mountFunnelWidget } from './widgets/funnelWidget.js';
 import { mountScenarioWidget } from './widgets/scenarioWidget.js';
 import { mountBrandSummaryWidget } from './widgets/brandSummaryWidget.js';
-import { mountCollectionHealthWidget, renderCollectionHealthBanner } from './widgets/collectionHealthWidget.js';
 import { loadConnectionMeta } from './profile/secureStore.js';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -49,14 +48,11 @@ async function renderOurStats() {
 
   try {
     const scope = getConnectionScope();
-    const [data, statusPayload] = await Promise.all([
-      getOverview({
-        platform: 'all',
-        horizon: 30,
-        connected: scope.configuredPlatforms
-      }),
-      getCollectionStatus(10)
-    ]);
+    const data = await getOverview({
+      platform: 'all',
+      horizon: 30,
+      connected: scope.configuredPlatforms
+    });
 
     root.innerHTML = '';
 
@@ -83,7 +79,6 @@ async function renderOurStats() {
       topModels.node
     );
 
-    renderCollectionHealthBanner(root, data.collection);
     renderScopeNotice(root, scope);
     mountBrandSummaryWidget(summary.content, data);
     mountOverviewWidget(kpi.content, data.aggregated.totals);
