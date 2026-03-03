@@ -17,7 +17,9 @@ export class PostgresStorageAdapter {
         fetched_platforms INTEGER DEFAULT 0,
         upserted_platform_rows INTEGER DEFAULT 0,
         upserted_model_rows INTEGER DEFAULT 0,
-        error_message TEXT
+        error_message TEXT,
+        platform_quality_metrics JSONB,
+        quality_summary JSONB
       );
 
       CREATE TABLE IF NOT EXISTS platform_daily_metrics (
@@ -43,6 +45,11 @@ export class PostgresStorageAdapter {
         PRIMARY KEY (platform_id, model_id, date)
       );
     `);
+
+    await this.pool.query(`
+      ALTER TABLE collection_runs ADD COLUMN IF NOT EXISTS platform_quality_metrics JSONB;
+      ALTER TABLE collection_runs ADD COLUMN IF NOT EXISTS quality_summary JSONB;
+    `);
   }
 
   async createCollectionRun({ runType, status, startedAt }) {
@@ -56,9 +63,19 @@ export class PostgresStorageAdapter {
   async completeCollectionRun(id, payload) {
     await this.pool.query(
       `UPDATE collection_runs
-       SET status = $1, completed_at = $2, fetched_platforms = $3, upserted_platform_rows = $4, upserted_model_rows = $5, error_message = $6
-       WHERE id = $7`,
-      [payload.status, payload.completedAt, payload.fetchedPlatforms, payload.upsertedPlatformRows, payload.upsertedModelRows, payload.errorMessage, id]
+       SET status = $1, completed_at = $2, fetched_platforms = $3, upserted_platform_rows = $4, upserted_model_rows = $5, error_message = $6, platform_quality_metrics = $7, quality_summary = $8
+       WHERE id = $9`,
+      [
+        payload.status,
+        payload.completedAt,
+        payload.fetchedPlatforms,
+        payload.upsertedPlatformRows,
+        payload.upsertedModelRows,
+        payload.errorMessage,
+        payload.platformQualityMetrics ?? null,
+        payload.qualitySummary ?? null,
+        id
+      ]
     );
   }
 

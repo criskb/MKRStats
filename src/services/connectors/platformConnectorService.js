@@ -19,13 +19,14 @@ function findActiveConnection(connections, platformId) {
   return connections.find((connection) => connection.platformId === platformId && ACTIVE_STATUSES.has(connection.status));
 }
 
-function buildConnectorMetadata({ status, usedMockData = false, error = null }) {
+function buildConnectorMetadata({ status, usedMockData = false, error = null, quality = null }) {
   return {
     connector: {
       status,
       usedMockData,
       error
-    }
+    },
+    quality
   };
 }
 
@@ -33,22 +34,26 @@ async function fetchPlatformSnapshot(platform, activeConnection) {
   const client = CLIENT_BY_PLATFORM[platform.id];
 
   if (!activeConnection) {
+    const snapshot = normalizeSnapshot(platform.id, { source: 'connector_unavailable', series: [], models: [] });
     return {
       ...platform,
-      snapshot: normalizeSnapshot(platform.id, { source: 'connector_unavailable', series: [], models: [] }),
+      snapshot,
       metadata: buildConnectorMetadata({
         status: 'error',
+        quality: snapshot.quality,
         error: { code: 'NO_ACTIVE_CONNECTION', message: `No active connection configured for ${platform.id}.` }
       })
     };
   }
 
   if (!client) {
+    const snapshot = normalizeSnapshot(platform.id, { source: 'connector_unavailable', series: [], models: [] });
     return {
       ...platform,
-      snapshot: normalizeSnapshot(platform.id, { source: 'connector_unavailable', series: [], models: [] }),
+      snapshot,
       metadata: buildConnectorMetadata({
         status: 'error',
+        quality: snapshot.quality,
         error: { code: 'UNSUPPORTED_PLATFORM', message: `No connector client implemented for ${platform.id}.` }
       })
     };
@@ -62,15 +67,17 @@ async function fetchPlatformSnapshot(platform, activeConnection) {
     return {
       ...platform,
       snapshot,
-      metadata: buildConnectorMetadata({ status: 'ok', usedMockData: isMockFallbackEnabled() })
+      metadata: buildConnectorMetadata({ status: 'ok', usedMockData: isMockFallbackEnabled(), quality: snapshot.quality })
     };
   } catch (error) {
+    const snapshot = normalizeSnapshot(platform.id, { source: 'connector_error', series: [], models: [] });
     return {
       ...platform,
-      snapshot: normalizeSnapshot(platform.id, { source: 'connector_error', series: [], models: [] }),
+      snapshot,
       metadata: buildConnectorMetadata({
         status: 'error',
         usedMockData: false,
+        quality: snapshot.quality,
         error: {
           code: error.code ?? 'CONNECTOR_FAILURE',
           message: error.message

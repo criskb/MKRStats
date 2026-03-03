@@ -103,15 +103,33 @@ function buildCollectionSummary(platformData, connected) {
     .map((platform) => Date.parse(platform.snapshot?.fetchedAt ?? '') || Date.now())
     .map((timestamp) => Math.max(0, Math.round((Date.now() - timestamp) / 60000)));
 
+  const perPlatformQuality = platformData.map((platform) => ({
+    platformId: platform.id,
+    score: platform.snapshot?.quality?.qualityScore ?? 0,
+    stale: Boolean(platform.snapshot?.quality?.checks?.staleSnapshot?.stale),
+    failed: Boolean(platform.snapshot?.quality?.hasFailures) || platform.metadata?.connector?.status === 'error'
+  }));
+
+  const averageQualityScore = perPlatformQuality.length
+    ? Math.round(perPlatformQuality.reduce((acc, row) => acc + row.score, 0) / perPlatformQuality.length)
+    : 0;
+
   return {
     source: 'configured_platform_connectors',
     requestedConnectedPlatforms: connected,
     activePlatforms: platformData.map((platform) => platform.id),
     platformCoveragePct: connected.length ? Math.round((platformData.length / connected.length) * 100) : 100,
     estimatedDataPoints: dataPoints,
-    maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0
+    maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0,
+    quality: {
+      averageQualityScore,
+      stalePlatforms: perPlatformQuality.filter((row) => row.stale).length,
+      failedPlatforms: perPlatformQuality.filter((row) => row.failed).length,
+      perPlatform: perPlatformQuality
+    }
   };
 }
+
 
 async function getOverviewPayload(url) {
   const { horizon, selectedPlatform, connected } = normalizeScope(url);
