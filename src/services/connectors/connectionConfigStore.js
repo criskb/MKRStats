@@ -17,7 +17,7 @@ function hashText(value) {
 function resolveMasterKey() {
   const configured = process.env.CONNECTION_MASTER_KEY;
   if (!configured) {
-    throw new Error('Missing CONNECTION_MASTER_KEY environment variable for credential encryption.');
+    return null;
   }
 
   const normalized = configured.trim();
@@ -35,9 +35,17 @@ function resolveMasterKey() {
 
 function encryptCredentialBlob(payload) {
   const masterKey = resolveMasterKey();
+  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+
+  if (!masterKey) {
+    return {
+      alg: 'plain-v1',
+      cipherText: plaintext.toString('base64')
+    };
+  }
+
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', masterKey, iv);
-  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
@@ -51,7 +59,15 @@ function encryptCredentialBlob(payload) {
 
 function decryptCredentialBlob(blob) {
   if (!blob || typeof blob !== 'object') return null;
+
+  if (blob.alg === 'plain-v1') {
+    const text = Buffer.from(String(blob.cipherText ?? ''), 'base64').toString('utf8');
+    return JSON.parse(text);
+  }
+
   const masterKey = resolveMasterKey();
+  if (!masterKey) return null;
+
   const iv = Buffer.from(String(blob.iv ?? ''), 'base64');
   const authTag = Buffer.from(String(blob.authTag ?? ''), 'base64');
   const cipherText = Buffer.from(String(blob.cipherText ?? ''), 'base64');
@@ -70,6 +86,14 @@ function sanitizeConnection(connection) {
     lastValidatedAt: connection.lastValidatedAt,
     lastError: connection.lastError,
     updatedAt: connection.updatedAt
+  };
+}
+
+function hydrateConnection(connection) {
+  const credential = decryptCredentialBlob(connection.encryptedCredentialBlob);
+  return {
+    ...sanitizeConnection(connection),
+    credential: credential ?? null
   };
 }
 
@@ -108,8 +132,8 @@ function normalizeInput(input = {}) {
     throw new Error('platformId and accountId are required.');
   }
 
-  const credentialPayload = input.credential ?? input.credentials ?? null;
-  if (!credentialPayload || typeof credentialPayload !== 'object') {
+  const credentialPayload = input.credential ?? input.credentials ?? {};
+  if (typeof credentialPayload !== 'object' || Array.isArray(credentialPayload) || credentialPayload == null) {
     throw new Error('credential object is required.');
   }
 
@@ -155,9 +179,9 @@ export async function upsertConnectionConfig(input) {
   return sanitizeConnection(record);
 }
 
-export async function getConnectionStatuses() {
+export async function getConnectionStatuses({ includeCredentials = false } = {}) {
   const store = await readStore();
-  return store.connections.map((connection) => sanitizeConnection(connection));
+  return store.connections.map((connection) => (includeCredentials ? hydrateConnection(connection) : sanitizeConnection(connection)));
 }
 
 export async function authenticateBridgeSubmission({ platformId, accountHandle, apiToken, sessionId }) {

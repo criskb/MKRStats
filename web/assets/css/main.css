@@ -529,3 +529,33 @@ body {
   color: white;
   font-size: 0.74rem;
 }
+
+.page-header {
+  background: radial-gradient(1200px 240px at 20% -20%, rgba(73, 160, 255, 0.22), transparent),
+    radial-gradient(900px 220px at 80% -40%, rgba(125, 107, 255, 0.2), transparent);
+}
+
+.widget {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.widget:hover {
+  transform: translateY(-2px);
+  border-color: #3a4b66;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
+}
+
+.kpi-card {
+  background: linear-gradient(160deg, #111722, #121b2a);
+}
+
+.mode-tab--active {
+  box-shadow: 0 0 0 1px rgba(135, 178, 255, 0.4), 0 8px 18px rgba(64, 93, 166, 0.4);
+}
+
+.button-secondary:hover,
+.button-primary:hover,
+.segment-bar__item:hover {
+  filter: brightness(1.08);
+}

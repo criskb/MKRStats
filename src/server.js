@@ -33,8 +33,8 @@ const MIME_TYPES = {
 };
 
 function normalizeScope(url) {
-  const requestedHorizon = Number(url.searchParams.get('horizon') ?? 14);
-  const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(60, Math.floor(requestedHorizon))) : 14;
+  const requestedHorizon = Number(url.searchParams.get('horizon') ?? 30);
+  const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(365, Math.floor(requestedHorizon))) : 30;
   const selectedPlatform = url.searchParams.get('platform') ?? 'all';
   const connected = (url.searchParams.get('connected') ?? '')
     .split(',')
@@ -275,12 +275,12 @@ const server = http.createServer(async (req, res) => {
         for (const [platformId, value] of entries) {
           const accountId = String(value?.handle ?? '').trim();
           const token = String(value?.apiKey ?? '').trim();
-          if (!accountId || !token) continue;
+          if (!accountId) continue;
           const saved = await upsertConnectionConfig({
             platformId,
             accountId,
             authType: 'api_key',
-            credential: { apiToken: token, sessionId: token },
+            credential: token ? { apiToken: token, sessionId: token } : { handle: accountId },
             status: 'active'
           });
           configured.push(saved.platformId);

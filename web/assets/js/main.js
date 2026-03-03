@@ -10,22 +10,31 @@ import { mountPlatformShareWidget } from './widgets/platformShareWidget.js';
 import { mountTodayBriefingWidget } from './widgets/todayBriefingWidget.js';
 import { mountTopModelsWidget } from './widgets/topModelsWidget.js';
 
+const SCOPE_TO_HORIZON = {
+  week: 7,
+  month: 30,
+  year: 365,
+  all: 365
+};
+
 const state = {
   mode: 'overview',
   platform: 'all',
   horizon: 30,
-  metric: 'downloads'
+  metric: 'downloads',
+  scope: 'month'
 };
 
 function buildGlobalBar(platforms) {
   const host = document.querySelector('#global-filter-bar');
   host.innerHTML = `
     <section class="global-bar">
-      <label>Date range
-        <select id="range-select">
-          <option value="7">7d</option>
-          <option value="30" selected>30d</option>
-          <option value="60">60d</option>
+      <label>Time scope
+        <select id="scope-select">
+          <option value="week">Weekly</option>
+          <option value="month" selected>30 days</option>
+          <option value="year">Yearly</option>
+          <option value="all">All time</option>
         </select>
       </label>
       <label>Platform
@@ -51,8 +60,9 @@ function buildGlobalBar(platforms) {
     </section>
   `;
 
-  host.querySelector('#range-select').addEventListener('change', (event) => {
-    state.horizon = Number(event.target.value);
+  host.querySelector('#scope-select').addEventListener('change', (event) => {
+    state.scope = event.target.value;
+    state.horizon = SCOPE_TO_HORIZON[state.scope] ?? 30;
     init();
   });
 
@@ -74,6 +84,20 @@ function buildGlobalBar(platforms) {
       init();
     });
   });
+}
+
+function withScopedTimeline(data) {
+  const scopedTimeline = state.scope === 'all'
+    ? data.aggregated.timeline
+    : data.aggregated.timeline.slice(-state.horizon);
+
+  return {
+    ...data,
+    aggregated: {
+      ...data.aggregated,
+      timeline: scopedTimeline
+    }
+  };
 }
 
 function renderDashboard(dashboard, data, statusPayload) {
@@ -115,7 +139,8 @@ function renderDashboard(dashboard, data, statusPayload) {
     <p class="scenario-note">Backtest + model picker shell:</p>
     <ul class="insight-list">
       <li>Method: ETS / ARIMA / Boosting</li>
-      <li>Horizon: ${state.horizon} days</li>
+      <li>Time scope: ${state.scope}</li>
+      <li>Forecast horizon: ${Math.min(60, state.horizon)} days</li>
       <li>Metric focus: ${state.metric}</li>
       <li>Scenario sliders: Promo, Platform uplift, Posting frequency</li>
     </ul>
@@ -137,7 +162,7 @@ async function init() {
       buildGlobalBar(platformResponse.platforms);
     }
 
-    renderDashboard(dashboard, overviewData, statusPayload);
+    renderDashboard(dashboard, withScopedTimeline(overviewData), statusPayload);
   } catch (error) {
     dashboard.innerHTML = `<div class="widget col-12"><div class="widget__content">Failed to load dashboard: ${error.message}</div></div>`;
   }
