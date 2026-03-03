@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MKRStats - Our Stats</title>
+    <link rel="stylesheet" href="/assets/css/main.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Our Brand Stats</h1>
+      <p>Dedicated view of our account performance across connected platforms.</p>
+      <nav class="top-nav">
+        <a href="/">Dashboard</a>
+        <a href="/our-stats.html" aria-current="page">Our Stats</a>
+        <a href="/profile.html">Settings / Profile</a>
+      </nav>
+    </header>
+
+    <main id="our-stats" class="dashboard-grid"></main>
+
+    <template id="widget-template">
+      <section class="widget">
+        <header class="widget__header"></header>
+        <div class="widget__content"></div>
+      </section>
+    </template>
+
+    <script type="module" src="/assets/js/ourStatsMain.js"></script>
+  </body>
+</html>

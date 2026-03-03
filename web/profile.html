@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MKRStats Profile & Connections</title>
+    <link rel="stylesheet" href="/assets/css/main.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>MKRStats Profile</h1>
+      <p>Configure your platform handles and API keys securely in your browser.</p>
+      <nav class="top-nav">
+        <a href="/">Dashboard</a>
+        <a href="/our-stats.html">Our Stats</a>
+        <a href="/profile.html" aria-current="page">Settings / Profile</a>
+      </nav>
+    </header>
+
+    <main class="dashboard-grid">
+      <section class="widget col-12">
+        <header class="widget__header">Security Model</header>
+        <div class="widget__content">
+          <p class="security-note">
+            API keys are encrypted in-browser with AES-GCM using a key derived from your passphrase (PBKDF2).
+            The passphrase is never stored or sent to the server.
+          </p>
+        </div>
+      </section>
+
+      <section class="widget col-12">
+        <header class="widget__header">Connection Settings</header>
+        <div id="profile-root" class="widget__content"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/assets/js/profile/main.js"></script>
+  </body>
+</html>
