@@ -408,32 +408,26 @@ const server = http.createServer(async (req, res) => {
   await serveStatic(req, res);
 });
 
-async function start() {
-  await initializeStorage();
-  const scheduler = startCollectionScheduler();
 
-  const shutdown = async (signal) => {
-    // eslint-disable-next-line no-console
-    console.log(`Received ${signal}; shutting down.`);
-    await scheduler.stop();
-    await new Promise((resolve) => server.close(resolve));
-  };
-
-  process.once('SIGINT', () => {
-    shutdown('SIGINT').finally(() => process.exit(0));
-  });
-  process.once('SIGTERM', () => {
-    shutdown('SIGTERM').finally(() => process.exit(0));
-  });
-
-  server.listen(PORT, () => {
-    // eslint-disable-next-line no-console
-    console.log(`MKRStats listening on http://localhost:${PORT}`);
-  });
+async function initializeStorage() {
+  // Placeholder for future persistent storage bootstrapping.
+  // Kept explicit so startup code is stable across branches that call it.
+  return true;
 }
 
-start().catch((error) => {
-  // eslint-disable-next-line no-console
-  console.error('Failed to start server:', error);
-  process.exitCode = 1;
-});
+async function start() {
+  try {
+    await initializeStorage();
+
+    server.listen(PORT, () => {
+      // eslint-disable-next-line no-console
+      console.log(`MKRStats listening on http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(`Failed to start server: ${error.message}`);
+    process.exitCode = 1;
+  }
+}
+
+start();
