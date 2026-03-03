@@ -154,8 +154,8 @@ function formatRunSummary(run) {
     startedAt: run.started_at ?? run.startedAt,
     completedAt: run.completed_at ?? run.completedAt,
     fetchedPlatforms: Number(run.fetched_platforms ?? run.fetchedPlatforms ?? 0),
-    upsertedPlatformRows: Number(run.upserted_platform_rows ?? run.upsertedPlatformRows ?? 0),
-    upsertedModelRows: Number(run.upserted_model_rows ?? run.upsertedModelRows ?? 0),
+    upsertedPlatformRows: Number(run.upserted_item_rows ?? run.upsertedItemRows ?? run.upserted_platform_rows ?? run.upsertedPlatformRows ?? 0),
+    upsertedModelRows: Number(run.upserted_metric_rows ?? run.upsertedMetricRows ?? run.upserted_model_rows ?? run.upsertedModelRows ?? 0),
     errorMessage: run.error_message ?? run.errorMessage ?? null,
     platformQualityMetrics: run.platform_quality_metrics ?? run.platformQualityMetrics ?? null,
     qualitySummary: run.quality_summary ?? run.qualitySummary ?? null

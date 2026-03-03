@@ -1,6 +1,7 @@
 import { mkdir } from 'fs/promises';
 import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
+import { runSqliteMigrations } from '../migrations/runMigrations.js';
 
 export class SqliteStorageAdapter {
   constructor(databasePath) {
@@ -12,88 +13,43 @@ export class SqliteStorageAdapter {
     await mkdir(path.dirname(this.databasePath), { recursive: true });
     this.db = new DatabaseSync(this.databasePath);
     this.db.exec('PRAGMA journal_mode = WAL;');
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS collection_runs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        run_type TEXT NOT NULL,
-        status TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        completed_at TEXT,
-        fetched_platforms INTEGER DEFAULT 0,
-        upserted_platform_rows INTEGER DEFAULT 0,
-        upserted_model_rows INTEGER DEFAULT 0,
-        error_message TEXT,
-        platform_quality_metrics TEXT,
-        quality_summary TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS platform_daily_metrics (
-        platform_id TEXT NOT NULL,
-        date TEXT NOT NULL,
-        views INTEGER NOT NULL DEFAULT 0,
-        downloads INTEGER NOT NULL DEFAULT 0,
-        sales INTEGER NOT NULL DEFAULT 0,
-        revenue REAL NOT NULL DEFAULT 0,
-        collected_at TEXT NOT NULL,
-        PRIMARY KEY (platform_id, date)
-      );
-
-      CREATE TABLE IF NOT EXISTS model_daily_metrics (
-        platform_id TEXT NOT NULL,
-        model_id TEXT NOT NULL,
-        model_title TEXT NOT NULL,
-        date TEXT NOT NULL,
-        downloads INTEGER NOT NULL DEFAULT 0,
-        sales INTEGER NOT NULL DEFAULT 0,
-        revenue REAL NOT NULL DEFAULT 0,
-        collected_at TEXT NOT NULL,
-        PRIMARY KEY (platform_id, model_id, date)
-      );
-    `);
-
-    const columns = this.db.prepare('PRAGMA table_info(collection_runs)').all();
-    const names = new Set(columns.map((column) => column.name));
-    if (!names.has('platform_quality_metrics')) {
-      this.db.exec('ALTER TABLE collection_runs ADD COLUMN platform_quality_metrics TEXT;');
-    }
-    if (!names.has('quality_summary')) {
-      this.db.exec('ALTER TABLE collection_runs ADD COLUMN quality_summary TEXT;');
-    }
+    this.db.exec('PRAGMA foreign_keys = ON;');
+    await runSqliteMigrations(this.db);
   }
 
-  async createCollectionRun({ runType, status, startedAt }) {
+  async createIngestionRun({ runType, status, startedAt }) {
     const stmt = this.db.prepare(`
-      INSERT INTO collection_runs (run_type, status, started_at)
+      INSERT INTO ingestion_runs (run_type, status, started_at)
       VALUES (?, ?, ?)
     `);
     const result = stmt.run(runType, status, startedAt);
     return result.lastInsertRowid;
   }
 
-  async completeCollectionRun(
+  async completeIngestionRun(
     id,
     {
       status,
       completedAt,
       fetchedPlatforms,
-      upsertedPlatformRows,
-      upsertedModelRows,
+      upsertedItemRows,
+      upsertedMetricRows,
       errorMessage = null,
       platformQualityMetrics = null,
       qualitySummary = null
     }
   ) {
     const stmt = this.db.prepare(`
-      UPDATE collection_runs
-      SET status = ?, completed_at = ?, fetched_platforms = ?, upserted_platform_rows = ?, upserted_model_rows = ?, error_message = ?, platform_quality_metrics = ?, quality_summary = ?
+      UPDATE ingestion_runs
+      SET status = ?, completed_at = ?, fetched_platforms = ?, upserted_item_rows = ?, upserted_metric_rows = ?, error_message = ?, platform_quality_metrics = ?, quality_summary = ?
       WHERE id = ?
     `);
     stmt.run(
       status,
       completedAt,
       fetchedPlatforms,
-      upsertedPlatformRows,
-      upsertedModelRows,
+      upsertedItemRows,
+      upsertedMetricRows,
       errorMessage,
       platformQualityMetrics ? JSON.stringify(platformQualityMetrics) : null,
       qualitySummary ? JSON.stringify(qualitySummary) : null,
@@ -101,69 +57,92 @@ export class SqliteStorageAdapter {
     );
   }
 
-  async upsertPlatformDailyMetrics(rows) {
+  async upsertAccount({ platformId, externalAccountId, displayName = null, now }) {
     const stmt = this.db.prepare(`
-      INSERT INTO platform_daily_metrics (platform_id, date, views, downloads, sales, revenue, collected_at)
+      INSERT INTO accounts (platform_id, external_account_id, display_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(platform_id, external_account_id) DO UPDATE SET
+        display_name = excluded.display_name,
+        updated_at = excluded.updated_at
+      RETURNING *
+    `);
+    return stmt.get(platformId, externalAccountId, displayName, now, now);
+  }
+
+  async upsertItem({ accountId, externalItemId, title, now }) {
+    const stmt = this.db.prepare(`
+      INSERT INTO items (account_id, external_item_id, title, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(account_id, external_item_id) DO UPDATE SET
+        title = excluded.title,
+        updated_at = excluded.updated_at
+      RETURNING *
+    `);
+    return stmt.get(accountId, externalItemId, title, now, now);
+  }
+
+  async upsertItemDailyMetric({ itemId, date, views, downloads, sales, revenue, capturedAt }) {
+    const stmt = this.db.prepare(`
+      INSERT INTO item_metrics_daily (item_id, date, views, downloads, sales, revenue, captured_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(platform_id, date) DO UPDATE SET
+      ON CONFLICT(item_id, date) DO UPDATE SET
         views = excluded.views,
         downloads = excluded.downloads,
         sales = excluded.sales,
         revenue = excluded.revenue,
-        collected_at = excluded.collected_at
+        captured_at = excluded.captured_at
     `);
-
-    for (const row of rows) {
-      stmt.run(row.platformId, row.date, row.views, row.downloads, row.sales, row.revenue, row.collectedAt);
-    }
+    stmt.run(itemId, date, views, downloads, sales, revenue, capturedAt);
   }
 
-  async upsertModelDailyMetrics(rows) {
+  async insertRawSnapshot({ ingestionRunId, accountId, itemId, date, dedupeHash, payload, capturedAt }) {
     const stmt = this.db.prepare(`
-      INSERT INTO model_daily_metrics (platform_id, model_id, model_title, date, downloads, sales, revenue, collected_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(platform_id, model_id, date) DO UPDATE SET
-        model_title = excluded.model_title,
-        downloads = excluded.downloads,
-        sales = excluded.sales,
-        revenue = excluded.revenue,
-        collected_at = excluded.collected_at
+      INSERT INTO item_snapshot_raw (ingestion_run_id, account_id, item_id, date, dedupe_hash, payload, captured_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(dedupe_hash) DO NOTHING
     `);
-
-    for (const row of rows) {
-      stmt.run(row.platformId, row.modelId, row.modelTitle, row.date, row.downloads, row.sales, row.revenue, row.collectedAt);
-    }
+    const result = stmt.run(ingestionRunId, accountId, itemId, date, dedupeHash, JSON.stringify(payload), capturedAt);
+    return result.changes > 0;
   }
 
   async getPlatformDailyMetrics(platformIds = []) {
-    let query = 'SELECT * FROM platform_daily_metrics';
+    let query = `
+      SELECT a.platform_id, md.date, SUM(md.views) AS views, SUM(md.downloads) AS downloads, SUM(md.sales) AS sales, SUM(md.revenue) AS revenue, MAX(md.captured_at) AS collected_at
+      FROM item_metrics_daily md
+      JOIN items i ON i.id = md.item_id
+      JOIN accounts a ON a.id = i.account_id
+    `;
     const values = [];
-
     if (platformIds.length) {
-      query += ` WHERE platform_id IN (${platformIds.map(() => '?').join(',')})`;
+      query += ` WHERE a.platform_id IN (${platformIds.map(() => '?').join(',')})`;
       values.push(...platformIds);
     }
 
-    query += ' ORDER BY date ASC';
+    query += ' GROUP BY a.platform_id, md.date ORDER BY md.date ASC';
     return this.db.prepare(query).all(...values);
   }
 
-  async getModelDailyMetrics(platformIds = []) {
-    let query = 'SELECT * FROM model_daily_metrics';
+  async getItemDailyMetrics(platformIds = []) {
+    let query = `
+      SELECT a.platform_id, i.external_item_id AS model_id, i.title AS model_title, md.date,
+             md.downloads, md.sales, md.revenue, md.captured_at AS collected_at
+      FROM item_metrics_daily md
+      JOIN items i ON i.id = md.item_id
+      JOIN accounts a ON a.id = i.account_id
+    `;
     const values = [];
-
     if (platformIds.length) {
-      query += ` WHERE platform_id IN (${platformIds.map(() => '?').join(',')})`;
+      query += ` WHERE a.platform_id IN (${platformIds.map(() => '?').join(',')})`;
       values.push(...platformIds);
     }
 
     return this.db.prepare(query).all(...values);
   }
 
-  async getRecentCollectionRuns(limit = 20) {
+  async getRecentIngestionRuns(limit = 20) {
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
     const rows = this.db.prepare(
-      `SELECT * FROM collection_runs ORDER BY started_at DESC LIMIT ?`
+      `SELECT * FROM ingestion_runs ORDER BY started_at DESC LIMIT ?`
     ).all(safeLimit);
 
     return rows.map((row) => ({

@@ -3,11 +3,17 @@ import { fileURLToPath } from 'url';
 import { SqliteStorageAdapter } from './adapters/sqliteAdapter.js';
 import { PostgresStorageAdapter } from './adapters/postgresAdapter.js';
 import { PLATFORM_CONFIG } from '../../config/platforms.js';
+import { createAccountsRepository } from './repositories/accountsRepository.js';
+import { createIngestionRunsRepository } from './repositories/ingestionRunsRepository.js';
+import { createItemMetricsDailyRepository } from './repositories/itemMetricsDailyRepository.js';
+import { createItemsRepository } from './repositories/itemsRepository.js';
+import { createItemSnapshotRawRepository } from './repositories/itemSnapshotRawRepository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let storage;
+let repositories;
 
 function getStorageAdapter() {
   if (storage) return storage;
@@ -29,6 +35,19 @@ function getStorageAdapter() {
   return storage;
 }
 
+function getRepositories() {
+  if (repositories) return repositories;
+  const adapter = getStorageAdapter();
+  repositories = {
+    accounts: createAccountsRepository(adapter),
+    items: createItemsRepository(adapter),
+    itemMetricsDaily: createItemMetricsDailyRepository(adapter),
+    itemSnapshotRaw: createItemSnapshotRawRepository(adapter),
+    ingestionRuns: createIngestionRunsRepository(adapter)
+  };
+  return repositories;
+}
+
 export async function initializeStorage() {
   const adapter = getStorageAdapter();
   await adapter.initialize();
@@ -39,12 +58,16 @@ export function getStorage() {
   return getStorageAdapter();
 }
 
+export function getStorageRepositories() {
+  return getRepositories();
+}
+
 export async function readPlatformHistory(platformIds = []) {
-  const adapter = getStorageAdapter();
+  const repos = getRepositories();
   const platforms = PLATFORM_CONFIG.filter((p) => !platformIds.length || platformIds.includes(p.id));
   const [seriesRows, modelRows] = await Promise.all([
-    adapter.getPlatformDailyMetrics(platformIds),
-    adapter.getModelDailyMetrics(platformIds)
+    repos.itemMetricsDaily.listByPlatforms(platformIds),
+    repos.itemMetricsDaily.listItemMetricsByPlatforms(platformIds)
   ]);
 
   const seriesByPlatform = new Map();
@@ -111,7 +134,7 @@ export async function readPlatformHistory(platformIds = []) {
       snapshot: {
         platformId: platform.id,
         fetchedAt,
-        source: 'stored_history',
+        source: 'persisted_daily_metrics',
         currency: 'USD',
         series: platformSeries,
         models: platformModels
@@ -121,6 +144,6 @@ export async function readPlatformHistory(platformIds = []) {
 }
 
 export async function readRecentCollectionRuns(limit = 20) {
-  const adapter = getStorageAdapter();
-  return adapter.getRecentCollectionRuns(limit);
+  const repos = getRepositories();
+  return repos.ingestionRuns.getRecentRuns(limit);
 }
