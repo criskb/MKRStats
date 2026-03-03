@@ -6,10 +6,11 @@ import { PLATFORM_CONFIG } from './config/platforms.js';
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
 import { forecastNextDays } from './services/predictions/forecastService.js';
 import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
-import { getConnectionStatuses, upsertConnectionConfig } from './services/connectors/connectionConfigStore.js';
-import { initializeStorage, readPlatformHistory, readRecentCollectionRuns } from './services/storage/index.js';
+import { authenticateBridgeSubmission, getConnectionStatuses, upsertConnectionConfig } from './services/connectors/connectionConfigStore.js';
+import { initializeStorage, readLatestBridgeIngestCapturedAt, readPlatformHistory, readRecentCollectionRuns } from './services/storage/index.js';
 import { runCollectionCycle } from './services/collection/runCollectionCycle.js';
 import { startCollectionScheduler } from './services/collection/scheduler.js';
+import { processBridgeIngest } from './services/connectors/bridgeIngestService.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __filename = fileURLToPath(import.meta.url);
@@ -69,6 +70,26 @@ function readJsonBody(req) {
 
     req.on('error', (error) => reject(error));
   });
+}
+
+
+
+function isAllowedBridgeOrigin(req) {
+  const configured = String(process.env.MKRSTATS_BRIDGE_ALLOWED_ORIGINS ?? '').trim();
+  if (!configured) return true;
+
+  const origin = String(req.headers.origin ?? '').trim();
+  if (!origin) return false;
+
+  const allowedOrigins = configured.split(',').map((value) => value.trim()).filter(Boolean);
+  if (allowedOrigins.includes('*')) return true;
+  return allowedOrigins.includes(origin);
+}
+
+function getBridgeCredentials(req) {
+  const token = String(req.headers['x-bridge-api-token'] ?? '').trim();
+  const session = String(req.headers['x-bridge-session'] ?? '').trim();
+  return { token, session };
 }
 
 function sendCsv(res, filename, text) {
@@ -347,6 +368,35 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/bridge_ingest') {
+    try {
+      if (!isAllowedBridgeOrigin(req)) {
+        sendJson(res, 403, { message: 'Bridge ingest origin is not allowed.' });
+        return;
+      }
+
+      const payload = await readJsonBody(req);
+      const credentials = getBridgeCredentials(req);
+      const authenticated = await authenticateBridgeSubmission({
+        platformId: payload.platform,
+        accountHandle: payload.accountHandle,
+        apiToken: credentials.token,
+        sessionId: credentials.session
+      });
+
+      if (!authenticated) {
+        sendJson(res, 401, { message: 'Invalid bridge authentication credentials.' });
+        return;
+      }
+
+      const result = await processBridgeIngest(payload);
+      sendJson(res, 202, { accepted: true, result });
+    } catch (error) {
+      sendJson(res, 400, { message: error.message });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/export.csv') {
     await handleExportCsv(req, res, url);
     return;
@@ -356,8 +406,20 @@ const server = http.createServer(async (req, res) => {
     try {
       const requestedLimit = Number(url.searchParams.get('limit') ?? 20);
       const runs = await readRecentCollectionRuns(requestedLimit);
+      const latestBridgeIngestAt = await readLatestBridgeIngestCapturedAt();
+      const latestRun = runs[0] ? formatRunSummary(runs[0]) : null;
+      const freshnessMinutes = latestBridgeIngestAt
+        ? Math.max(0, Math.round((Date.now() - Date.parse(latestBridgeIngestAt)) / 60000))
+        : null;
+
       sendJson(res, 200, {
         generatedAt: new Date().toISOString(),
+        latestRun,
+        bridgeIngest: {
+          latestCapturedAt: latestBridgeIngestAt,
+          freshnessMinutes,
+          healthy: freshnessMinutes == null ? false : freshnessMinutes <= Number(process.env.MKRSTATS_BRIDGE_FRESHNESS_SLA_MINUTES ?? 120)
+        },
         runs: runs.map(formatRunSummary)
       });
     } catch (error) {

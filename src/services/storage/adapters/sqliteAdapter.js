@@ -149,6 +149,12 @@ export class SqliteStorageAdapter {
     return this.db.prepare(query).all(...values);
   }
 
+
+  async getLatestRawSnapshotCapturedAt() {
+    const row = this.db.prepare(`SELECT MAX(captured_at) AS captured_at FROM item_snapshot_raw`).get();
+    return row?.captured_at ?? null;
+  }
+
   async getRecentIngestionRuns(limit = 20) {
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
     const rows = this.db.prepare(

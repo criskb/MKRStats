@@ -49,6 +49,18 @@ function encryptCredentialBlob(payload) {
   };
 }
 
+function decryptCredentialBlob(blob) {
+  if (!blob || typeof blob !== 'object') return null;
+  const masterKey = resolveMasterKey();
+  const iv = Buffer.from(String(blob.iv ?? ''), 'base64');
+  const authTag = Buffer.from(String(blob.authTag ?? ''), 'base64');
+  const cipherText = Buffer.from(String(blob.cipherText ?? ''), 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', masterKey, iv);
+  decipher.setAuthTag(authTag);
+  const plaintext = Buffer.concat([decipher.update(cipherText), decipher.final()]).toString('utf8');
+  return JSON.parse(plaintext);
+}
+
 function sanitizeConnection(connection) {
   return {
     platformId: connection.platformId,
@@ -146,4 +158,34 @@ export async function upsertConnectionConfig(input) {
 export async function getConnectionStatuses() {
   const store = await readStore();
   return store.connections.map((connection) => sanitizeConnection(connection));
+}
+
+export async function authenticateBridgeSubmission({ platformId, accountHandle, apiToken, sessionId }) {
+  const normalizedPlatformId = String(platformId ?? '').trim().toLowerCase();
+  const normalizedAccountHandle = String(accountHandle ?? '').trim();
+  const token = String(apiToken ?? '').trim();
+  const session = String(sessionId ?? '').trim();
+
+  if (!normalizedPlatformId || !normalizedAccountHandle || !token || !session) {
+    return null;
+  }
+
+  const store = await readStore();
+  for (const connection of store.connections) {
+    if (String(connection.platformId ?? '').toLowerCase() !== normalizedPlatformId) continue;
+    if (String(connection.accountId ?? '').trim() !== normalizedAccountHandle) continue;
+    try {
+      const credential = decryptCredentialBlob(connection.encryptedCredentialBlob);
+      if (!credential || typeof credential !== 'object') continue;
+      const expectedToken = String(credential.apiToken ?? credential.token ?? '').trim();
+      const expectedSession = String(credential.sessionId ?? credential.session ?? '').trim();
+      if (expectedToken === token && expectedSession === session) {
+        return sanitizeConnection(connection);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }

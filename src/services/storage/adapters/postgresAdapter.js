@@ -147,6 +147,12 @@ export class PostgresStorageAdapter {
     return rows;
   }
 
+
+  async getLatestRawSnapshotCapturedAt() {
+    const { rows } = await this.pool.query(`SELECT MAX(captured_at) AS captured_at FROM item_snapshot_raw`);
+    return rows[0]?.captured_at ?? null;
+  }
+
   async getRecentIngestionRuns(limit = 20) {
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
     const { rows } = await this.pool.query(
