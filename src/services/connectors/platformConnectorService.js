@@ -39,6 +39,7 @@ function mergeSnapshots(platformId, snapshots = [], source = 'platform_connector
         date: row.date,
         views: 0,
         downloads: 0,
+        likes: 0,
         sales: 0,
         revenue: 0,
         currency: row.currency ?? 'USD'
@@ -46,6 +47,7 @@ function mergeSnapshots(platformId, snapshots = [], source = 'platform_connector
 
       existing.views += Number(row.views ?? 0);
       existing.downloads += Number(row.downloads ?? 0);
+      existing.likes += Number(row.likes ?? 0);
       existing.sales += Number(row.sales ?? 0);
       existing.revenue = Number((existing.revenue + Number(row.revenue ?? 0)).toFixed(2));
       byDate.set(row.date, existing);
@@ -57,11 +59,13 @@ function mergeSnapshots(platformId, snapshots = [], source = 'platform_connector
         id: key,
         title: model.title ?? 'Untitled Model',
         downloads: 0,
+        likes: 0,
         sales: 0,
         revenue: 0
       };
 
       existing.downloads += Number(model.downloads ?? 0);
+      existing.likes += Number(model.likes ?? 0);
       existing.sales += Number(model.sales ?? 0);
       existing.revenue = Number((existing.revenue + Number(model.revenue ?? 0)).toFixed(2));
       byModel.set(key, existing);

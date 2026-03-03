@@ -1,4 +1,4 @@
-import { normalizeSnapshot, paginate, requestWithRetry } from '../baseConnector.js';
+import { paginate, requestWithRetry } from '../baseConnector.js';
 import { normalizeSeriesToCanonical } from '../validation/connectorPayloadValidators.js';
 
 function normalizeMetricRow(row = {}) {
@@ -12,7 +12,7 @@ function normalizeMetricRow(row = {}) {
   });
 }
 
-export const printablesClient = {
+export const thingiverseClient = {
   async discoverItems(account = {}) {
     if (Array.isArray(account.items)) {
       return account.items;
@@ -32,7 +32,7 @@ export const printablesClient = {
 
   capabilities() {
     return {
-      platform: 'printables',
+      platform: 'thingiverse',
       integrationMode: 'api',
       supportsDiscoverItems: true,
       acceptsUserMediatedPayload: false,
@@ -41,15 +41,4 @@ export const printablesClient = {
   }
 };
 
-export async function fetchPrintablesSnapshot(_connection) {
-  const models = await printablesClient.discoverItems();
-
-  return normalizeSnapshot('printables', {
-    source: 'printables_api',
-    series: [],
-    models,
-    fetchedAt: new Date().toISOString()
-  });
-}
-
-export default printablesClient;
+export default thingiverseClient;
