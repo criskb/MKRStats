@@ -27,41 +27,16 @@ function renderLoading(dashboard) {
 
 function renderDashboard(dashboard, platforms, data) {
   const controls = createWidget('Dashboard Controls', 'col-4');
-  mountControlsWidget(controls.content, platforms, state, (nextState) => {
-    state.platform = nextState.platform;
-    state.horizon = Math.max(7, Math.min(60, nextState.horizon));
-    init();
-  });
-
   const insights = createWidget('Executive Insights', 'col-8');
-  mountInsightsWidget(insights.content, data.aggregated.insights, data.forecast.revenue);
-
   const overview = createWidget('Portfolio KPI Overview', 'col-12');
-  mountOverviewWidget(overview.content, data.aggregated.totals);
-
   const deltas = createWidget('KPI Momentum (vs prior 7d)', 'col-4');
-  mountDeltaWidget(deltas.content, data.aggregated.kpiDeltas);
-
   const scenario = createWidget('Forecast Scenarios', 'col-4');
-  mountScenarioWidget(scenario.content, data.forecast.revenue);
-
   const funnel = createWidget('Conversion Funnel', 'col-4');
-  mountFunnelWidget(funnel.content, data.aggregated.funnel);
-
   const performance = createWidget('Traffic and Sales Trends', 'col-8');
-  mountPerformanceChart(performance.content, data.aggregated.timeline);
-
   const forecast = createWidget(`Revenue Forecast (${data.horizon}d)`, 'col-4');
-  mountForecastWidget(forecast.content, data.aggregated.timeline, data.forecast);
-
   const topModels = createWidget('Top Models by Revenue', 'col-8');
-  mountTopModelsWidget(topModels.content, data.aggregated.topModels);
-
   const platformRevenue = createWidget('Platform Revenue Comparison', 'col-4');
-  mountPlatformRevenueWidget(platformRevenue.content, data.aggregated.platformSummaries);
-
   const platformGrid = createWidget('Connected Platform Coverage', 'col-12');
-  mountPlatformGridWidget(platformGrid.content, data.platforms, data.aggregated.platformSummaries);
 
   dashboard.append(
     controls.node,
@@ -76,6 +51,23 @@ function renderDashboard(dashboard, platforms, data) {
     platformRevenue.node,
     platformGrid.node
   );
+
+  mountControlsWidget(controls.content, platforms, state, (nextState) => {
+    state.platform = nextState.platform;
+    state.horizon = Math.max(7, Math.min(60, nextState.horizon));
+    init();
+  });
+
+  mountInsightsWidget(insights.content, data.aggregated.insights, data.forecast.revenue);
+  mountOverviewWidget(overview.content, data.aggregated.totals);
+  mountDeltaWidget(deltas.content, data.aggregated.kpiDeltas);
+  mountScenarioWidget(scenario.content, data.forecast.revenue);
+  mountFunnelWidget(funnel.content, data.aggregated.funnel);
+  mountPerformanceChart(performance.content, data.aggregated.timeline);
+  mountForecastWidget(forecast.content, data.aggregated.timeline, data.forecast);
+  mountTopModelsWidget(topModels.content, data.aggregated.topModels);
+  mountPlatformRevenueWidget(platformRevenue.content, data.aggregated.platformSummaries);
+  mountPlatformGridWidget(platformGrid.content, data.platforms, data.aggregated.platformSummaries);
 }
 
 async function init() {
@@ -83,13 +75,13 @@ async function init() {
   renderLoading(dashboard);
 
   try {
-    const [platformResponse, overview] = await Promise.all([
+    const [platformResponse, overviewData] = await Promise.all([
       getPlatforms(),
       getOverview(state)
     ]);
 
     clearDashboard(dashboard);
-    renderDashboard(dashboard, platformResponse.platforms, overview);
+    renderDashboard(dashboard, platformResponse.platforms, overviewData);
   } catch (error) {
     dashboard.innerHTML = `<div class="widget col-12"><div class="widget__content">Failed to load dashboard: ${error.message}</div></div>`;
   }
