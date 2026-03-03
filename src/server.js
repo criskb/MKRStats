@@ -34,7 +34,7 @@ const MIME_TYPES = {
 
 function normalizeScope(url) {
   const requestedHorizon = Number(url.searchParams.get('horizon') ?? 30);
-  const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(365, Math.floor(requestedHorizon))) : 30;
+  const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(3650, Math.floor(requestedHorizon))) : 30;
   const selectedPlatform = url.searchParams.get('platform') ?? 'all';
   const connected = (url.searchParams.get('connected') ?? '')
     .split(',')

@@ -14,7 +14,7 @@ const SCOPE_TO_HORIZON = {
   week: 7,
   month: 30,
   year: 365,
-  all: 365
+  all: 3650
 };
 
 const state = {

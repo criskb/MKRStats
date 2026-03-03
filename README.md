@@ -94,9 +94,9 @@ test/
 
 ## API response shape
 
-`GET /api/overview?platform=all|<platformId>&horizon=7..365` returns:
+`GET /api/overview?platform=all|<platformId>&horizon=7..3650` returns:
 
-`GET /api/export.csv?platform=all|<platformId>&horizon=7..365` downloads timeline data as CSV.
+`GET /api/export.csv?platform=all|<platformId>&horizon=7..3650` downloads timeline data as CSV.
 
 - `platforms`: selected platform configs + snapshots.
 - `aggregated`:
