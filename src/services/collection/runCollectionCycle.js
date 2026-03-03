@@ -1,34 +1,7 @@
 import { fetchAllPlatformStats } from '../connectors/platformConnectorService.js';
-import { getStorage } from '../storage/index.js';
+import { getStorageRepositories } from '../storage/index.js';
 import { isoDay } from '../../utils/date.js';
-import { randomUUID } from 'crypto';
-
-function buildPlatformRows(platform, { seriesRows = null } = {}) {
-  const rows = seriesRows ?? platform.snapshot.series;
-  return rows.map((row) => ({
-    platformId: platform.id,
-    date: row.date,
-    views: Number(row.views ?? 0),
-    downloads: Number(row.downloads ?? 0),
-    sales: Number(row.sales ?? 0),
-    revenue: Number(Number(row.revenue ?? 0).toFixed(2)),
-    collectedAt: platform.snapshot.fetchedAt ?? new Date().toISOString()
-  }));
-}
-
-function buildModelRows(platform, dates) {
-  const models = platform.snapshot.models ?? [];
-  return dates.flatMap((date) => models.map((model) => ({
-    platformId: platform.id,
-    modelId: String(model.id ?? model.title),
-    modelTitle: String(model.title ?? model.id),
-    date,
-    downloads: Number(model.downloads ?? 0),
-    sales: Number(model.sales ?? 0),
-    revenue: Number(Number(model.revenue ?? 0).toFixed(2)),
-    collectedAt: platform.snapshot.fetchedAt ?? new Date().toISOString()
-  })));
-}
+import { createHash, randomUUID } from 'crypto';
 
 function buildRunQualityMetrics(platformData) {
   const perPlatform = platformData.map((platform) => ({
@@ -57,94 +30,106 @@ function buildRunQualityMetrics(platformData) {
   };
 }
 
+function hashSnapshot(input) {
+  return createHash('sha256').update(JSON.stringify(input)).digest('hex');
+}
+
 export async function runCollectionCycle({ runType = 'scheduled_fetch', daysBack = null } = {}) {
-  const storage = getStorage();
+  const repos = getStorageRepositories();
   const startedAt = new Date().toISOString();
   const correlationId = randomUUID();
-  const runId = await storage.createCollectionRun({ runType, status: 'running', startedAt });
+  const runId = await repos.ingestionRuns.createRun({ runType, status: 'running', startedAt });
 
   // eslint-disable-next-line no-console
-  console.log(JSON.stringify({
-    level: 'info',
-    event: 'collection.cycle.started',
-    ts: startedAt,
-    correlationId,
-    runId,
-    runType
-  }));
+  console.log(JSON.stringify({ level: 'info', event: 'collection.cycle.started', ts: startedAt, correlationId, runId, runType }));
 
   try {
     const platformData = await fetchAllPlatformStats({ correlationId, runId });
     const qualityMetrics = buildRunQualityMetrics(platformData);
-    let upsertedPlatformRows = 0;
-    let upsertedModelRows = 0;
+    let upsertedItemRows = 0;
+    let upsertedMetricRows = 0;
 
     for (const platform of platformData) {
+      const fetchedAt = platform.snapshot?.fetchedAt ?? new Date().toISOString();
+      const account = await repos.accounts.upsertAccount({
+        platformId: platform.id,
+        externalAccountId: platform.metadata?.connector?.accountId ?? `default-${platform.id}`,
+        displayName: platform.label,
+        now: fetchedAt
+      });
+
       const series = Array.isArray(platform.snapshot?.series) ? platform.snapshot.series : [];
       const limitedSeries = daysBack == null ? series : series.slice(-Math.max(1, daysBack));
+      const fallbackDates = [isoDay(new Date())];
+      const metricDates = (limitedSeries.length ? limitedSeries : [{ date: fallbackDates[0], views: 0, downloads: 0, sales: 0, revenue: 0 }]);
+      const models = Array.isArray(platform.snapshot?.models) ? platform.snapshot.models : [];
 
-      const platformRows = buildPlatformRows(platform, { seriesRows: limitedSeries });
-      const targetDates = limitedSeries.length ? limitedSeries.map((row) => row.date) : [isoDay(new Date())];
-      const modelRows = buildModelRows(platform, targetDates);
+      for (const model of models) {
+        const item = await repos.items.upsertItem({
+          accountId: account.id,
+          externalItemId: String(model.id ?? model.title),
+          title: String(model.title ?? model.id),
+          now: fetchedAt
+        });
+        upsertedItemRows += 1;
 
-      await storage.upsertPlatformDailyMetrics(platformRows);
-      await storage.upsertModelDailyMetrics(modelRows);
-      upsertedPlatformRows += platformRows.length;
-      upsertedModelRows += modelRows.length;
+        for (const metric of metricDates) {
+          const date = metric.date;
+          const daily = {
+            itemId: item.id,
+            date,
+            views: Number(metric.views ?? 0),
+            downloads: Number(model.downloads ?? 0),
+            sales: Number(model.sales ?? 0),
+            revenue: Number(Number(model.revenue ?? 0).toFixed(2)),
+            capturedAt: fetchedAt
+          };
+          await repos.itemMetricsDaily.upsertDailyMetric(daily);
+          const payload = {
+            platformId: platform.id,
+            accountId: account.id,
+            itemId: item.id,
+            date,
+            model,
+            aggregate: metric,
+            fetchedAt
+          };
+          await repos.itemSnapshotRaw.insertSnapshot({
+            ingestionRunId: runId,
+            accountId: account.id,
+            itemId: item.id,
+            date,
+            dedupeHash: hashSnapshot(payload),
+            payload,
+            capturedAt: fetchedAt
+          });
+          upsertedMetricRows += 1;
+        }
+      }
     }
 
-    await storage.completeCollectionRun(runId, {
+    await repos.ingestionRuns.completeRun(runId, {
       status: 'success',
       completedAt: new Date().toISOString(),
       fetchedPlatforms: platformData.length,
-      upsertedPlatformRows,
-      upsertedModelRows,
+      upsertedItemRows,
+      upsertedMetricRows,
       platformQualityMetrics: qualityMetrics.perPlatform,
       qualitySummary: qualityMetrics.summary
     });
 
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify({
-      level: 'info',
-      event: 'collection.cycle.completed',
-      ts: new Date().toISOString(),
-      correlationId,
-      runId,
-      status: 'success',
-      fetchedPlatforms: platformData.length,
-      upsertedPlatformRows,
-      upsertedModelRows
-    }));
-
-    return {
-      runId,
-      correlationId,
-      fetchedPlatforms: platformData.length,
-      upsertedPlatformRows,
-      upsertedModelRows,
-      qualitySummary: qualityMetrics.summary
-    };
+    return { runId, correlationId, fetchedPlatforms: platformData.length, upsertedItemRows, upsertedMetricRows, qualitySummary: qualityMetrics.summary };
   } catch (error) {
-    await storage.completeCollectionRun(runId, {
+    await repos.ingestionRuns.completeRun(runId, {
       status: 'failed',
       completedAt: new Date().toISOString(),
       fetchedPlatforms: 0,
-      upsertedPlatformRows: 0,
-      upsertedModelRows: 0,
+      upsertedItemRows: 0,
+      upsertedMetricRows: 0,
       errorMessage: error.message,
       platformQualityMetrics: [],
       qualitySummary: { averageQualityScore: 0, stalePlatforms: 0, failedPlatforms: 0, healthyPlatforms: 0 }
     });
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify({
-      level: 'error',
-      event: 'collection.cycle.completed',
-      ts: new Date().toISOString(),
-      correlationId,
-      runId,
-      status: 'failed',
-      errorMessage: error.message
-    }));
     throw error;
   }
 }

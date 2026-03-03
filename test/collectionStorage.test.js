@@ -27,9 +27,9 @@ test('runCollectionCycle stores platform history idempotently', async () => {
   const first = await runCollectionCycle({ runType: 'test_run' });
   const second = await runCollectionCycle({ runType: 'test_run' });
 
-  assert.ok(first.upsertedPlatformRows > 0);
-  assert.ok(first.upsertedModelRows > 0);
-  assert.equal(second.upsertedPlatformRows, first.upsertedPlatformRows);
+  assert.ok(first.upsertedItemRows > 0);
+  assert.ok(first.upsertedMetricRows > 0);
+  assert.equal(second.upsertedItemRows, first.upsertedItemRows);
 
   const history = await readPlatformHistory(['cults3d']);
   assert.equal(history.length, 1);
