@@ -1,4 +1,4 @@
-import { getOverview } from './api/client.js';
+import { getCollectionStatus, getOverview } from './api/client.js';
 import { createWidget } from './components/widget.js';
 import { mountOverviewWidget } from './widgets/overviewWidget.js';
 import { mountPerformanceChart } from './widgets/performanceChartWidget.js';
@@ -63,6 +63,8 @@ async function renderOurStats() {
     const deltas = createWidget('Our KPI Momentum', 'col-4');
     const funnel = createWidget('Our Conversion Funnel', 'col-4');
     const scenarios = createWidget('Our Forecast Scenarios', 'col-4');
+    const diagnostics = createWidget('Collection Health', 'col-12');
+    diagnostics.node.id = 'collection-health-details';
     const topModels = createWidget('Our Top Models', 'col-12');
 
     root.append(
@@ -73,6 +75,7 @@ async function renderOurStats() {
       deltas.node,
       funnel.node,
       scenarios.node,
+      diagnostics.node,
       topModels.node
     );
 
@@ -84,6 +87,7 @@ async function renderOurStats() {
     mountDeltaWidget(deltas.content, data.aggregated.kpiDeltas);
     mountFunnelWidget(funnel.content, data.aggregated.funnel);
     mountScenarioWidget(scenarios.content, data.forecast.revenue);
+    mountCollectionHealthWidget(diagnostics.content, data.collection, statusPayload);
     mountTopModelsWidget(topModels.content, data.aggregated.topModels);
   } catch (error) {
     root.innerHTML = `<div class="widget col-12"><div class="widget__content">Failed to load our stats: ${error.message}</div></div>`;
