@@ -6,11 +6,7 @@ import { PLATFORM_CONFIG } from './config/platforms.js';
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
 import { forecastNextDays } from './services/predictions/forecastService.js';
 import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
-import { authenticateBridgeSubmission, getConnectionStatuses, upsertConnectionConfig } from './services/connectors/connectionConfigStore.js';
-import { initializeStorage, readLatestBridgeIngestCapturedAt, readPlatformHistory, readRecentCollectionRuns } from './services/storage/index.js';
-import { runCollectionCycle } from './services/collection/runCollectionCycle.js';
-import { startCollectionScheduler } from './services/collection/scheduler.js';
-import { processBridgeIngest } from './services/connectors/bridgeIngestService.js';
+import { buildCollectionSummary } from './services/analytics/collectionSummaryService.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __filename = fileURLToPath(import.meta.url);
@@ -180,103 +176,6 @@ function selectPlatforms(rawPlatformData, selectedPlatform, connected = []) {
 
   const connectedSet = new Set(connected);
   return scoped.filter((platform) => connectedSet.has(platform.id));
-}
-
-
-function buildCollectionSummary(platformData, connected) {
-  const dataPoints = platformData.reduce((acc, platform) => {
-    const seriesRows = platform.snapshot?.series?.length ?? 0;
-    const modelRows = platform.snapshot?.models?.length ?? 0;
-    return acc + seriesRows * 4 + modelRows * 4;
-  }, 0);
-
-  const freshnessMinutes = platformData
-    .map((platform) => Date.parse(platform.snapshot?.fetchedAt ?? '') || Date.now())
-    .map((timestamp) => Math.max(0, Math.round((Date.now() - timestamp) / 60000)));
-
-  return {
-    source: 'configured_platform_connectors',
-    requestedConnectedPlatforms: connected,
-    activePlatforms: platformData.map((platform) => platform.id),
-    platformCoveragePct: connected.length ? Math.round((platformData.length / connected.length) * 100) : 100,
-    estimatedDataPoints: dataPoints,
-    maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0
-  };
-}
-
-
-function buildCollectionSummary(platformData, connected, latestRunByPlatform = new Map()) {
-  const dataPoints = platformData.reduce((acc, platform) => {
-    const seriesRows = platform.snapshot?.series?.length ?? 0;
-    const modelRows = platform.snapshot?.models?.length ?? 0;
-    return acc + seriesRows * 4 + modelRows * 4;
-  }, 0);
-
-  const freshnessMinutes = platformData
-    .map((platform) => Date.parse(platform.snapshot?.fetchedAt ?? '') || Date.now())
-    .map((timestamp) => Math.max(0, Math.round((Date.now() - timestamp) / 60000)));
-
-  const perPlatformQuality = platformData.map((platform) => ({
-    platformId: platform.id,
-    score: platform.snapshot?.quality?.qualityScore ?? 0,
-    stale: Boolean(platform.snapshot?.quality?.checks?.staleSnapshot?.stale),
-    failed: Boolean(platform.snapshot?.quality?.hasFailures) || platform.metadata?.connector?.status === 'error'
-  }));
-
-  const averageQualityScore = perPlatformQuality.length
-    ? Math.round(perPlatformQuality.reduce((acc, row) => acc + row.score, 0) / perPlatformQuality.length)
-    : 0;
-
-  const platformStatus = platformData.map((platform) => {
-    const latestRun = latestRunByPlatform.get(platform.id) ?? null;
-    const runConnectorStatus = latestRun?.connectorStatus;
-    const snapshotFetchedAt = platform.snapshot?.fetchedAt ?? null;
-
-    return {
-      platformId: platform.id,
-      status: platform.metadata?.connector?.status ?? runConnectorStatus ?? 'unknown',
-      lastSuccessAt: (platform.metadata?.connector?.status === 'ok' || runConnectorStatus === 'ok') ? snapshotFetchedAt : null,
-      lastAttemptAt: latestRun?.startedAt ?? snapshotFetchedAt,
-      errorCode: platform.metadata?.connector?.error?.code ?? latestRun?.errorCode ?? null,
-      errorMessage: platform.metadata?.connector?.error?.message ?? latestRun?.errorMessage ?? null
-    };
-  });
-
-  return {
-    source: 'configured_platform_connectors',
-    requestedConnectedPlatforms: connected,
-    activePlatforms: platformData.map((platform) => platform.id),
-    platformCoveragePct: connected.length ? Math.round((platformData.length / connected.length) * 100) : 100,
-    estimatedDataPoints: dataPoints,
-    maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0,
-    quality: {
-      averageQualityScore,
-      stalePlatforms: perPlatformQuality.filter((row) => row.stale).length,
-      failedPlatforms: perPlatformQuality.filter((row) => row.failed).length,
-      perPlatform: perPlatformQuality
-    },
-    platformStatus
-  };
-}
-
-function formatRunSummary(run) {
-  return {
-    id: Number(run.id),
-    runType: run.run_type ?? run.runType,
-    status: run.status,
-    startedAt: run.started_at ?? run.startedAt,
-    completedAt: run.ended_at ?? run.completed_at ?? run.completedAt,
-    fetchedPlatforms: Number(run.fetched_platforms ?? run.fetchedPlatforms ?? 0),
-    upsertedPlatformRows: Number(run.upserted_item_rows ?? run.upsertedItemRows ?? run.upserted_platform_rows ?? run.upsertedPlatformRows ?? 0),
-    upsertedModelRows: Number(run.upserted_metric_rows ?? run.upsertedMetricRows ?? run.upserted_model_rows ?? run.upsertedModelRows ?? 0),
-    errorMessage: run.error_message ?? run.errorMessage ?? null,
-    platformQualityMetrics: run.platform_quality_metrics ?? run.platformQualityMetrics ?? null,
-    qualitySummary: run.quality_summary ?? run.qualitySummary ?? null,
-    errorCount: Number(run.error_count ?? run.errorCount ?? 0),
-    rateLimitedCount: Number(run.rate_limited_count ?? run.rateLimitedCount ?? 0),
-    rateLimitEvents: run.rate_limit_events ?? run.rateLimitEvents ?? null,
-    nextScheduledAt: run.next_scheduled_at ?? run.nextScheduledAt ?? null
-  };
 }
 
 
