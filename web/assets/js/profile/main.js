@@ -98,7 +98,8 @@ async function initProfile() {
         const encrypted = await encryptPayload({ values, updatedAt: new Date().toISOString() }, passphraseInput.value);
         saveEncryptedConnections(encrypted);
         saveConnectionMeta(values);
-        status('Settings saved encrypted in localStorage. Our Stats now uses configured platforms.');
+        const configured = Object.values(values).filter((row) => row.handle?.trim?.() || row.apiKey?.trim?.()).length;
+        status(`Settings saved encrypted in localStorage. ${configured} platform(s) configured for Our Stats scope.`);
       } catch (error) {
         status(`Unable to save settings: ${error.message}`, true);
       }
@@ -118,8 +119,11 @@ async function initProfile() {
 
       try {
         const payload = await decryptPayload(encrypted, passphraseInput.value);
-        applyValues(form, payload.values ?? {}, platforms);
-        status(`Settings decrypted. Last updated: ${payload.updatedAt ?? 'unknown'}`);
+        const values = payload.values ?? {};
+        applyValues(form, values, platforms);
+        saveConnectionMeta(values);
+        const configured = Object.values(values).filter((row) => row.handle?.trim?.() || row.apiKey?.trim?.()).length;
+        status(`Settings decrypted and scope metadata synced (${configured} configured). Last updated: ${payload.updatedAt ?? 'unknown'}`);
       } catch {
         status('Decryption failed. Check passphrase.', true);
       }

@@ -35,6 +35,22 @@ async function deriveKey(passphrase, salt) {
   );
 }
 
+function normalizeConnectionRows(values = {}) {
+  return Object.entries(values).map(([platformId, config]) => {
+    const handle = config?.handle?.trim?.() ?? '';
+    const apiKey = config?.apiKey?.trim?.() ?? '';
+    const hasHandle = Boolean(handle);
+    const hasApiKey = Boolean(apiKey);
+
+    return {
+      platformId,
+      hasHandle,
+      hasApiKey,
+      completenessScore: hasHandle && hasApiKey ? 100 : hasHandle || hasApiKey ? 50 : 0
+    };
+  });
+}
+
 export async function encryptPayload(payload, passphrase) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -77,16 +93,14 @@ export function saveEncryptedConnections(payload) {
 }
 
 export function saveConnectionMeta(values = {}) {
-  const configuredPlatforms = Object.entries(values)
-    .filter(([, config]) => {
-      const handle = config?.handle?.trim?.() ?? '';
-      const apiKey = config?.apiKey?.trim?.() ?? '';
-      return Boolean(handle || apiKey);
-    })
-    .map(([platformId]) => platformId);
+  const rows = normalizeConnectionRows(values);
+  const configuredPlatforms = rows.filter((row) => row.completenessScore > 0).map((row) => row.platformId);
 
   const payload = {
     configuredPlatforms,
+    platformHealth: rows,
+    configuredCount: configuredPlatforms.length,
+    coverageScore: rows.length ? Math.round(rows.reduce((acc, row) => acc + row.completenessScore, 0) / rows.length) : 0,
     updatedAt: new Date().toISOString()
   };
 
@@ -102,7 +116,15 @@ export function loadConnectionMeta() {
     if (!Array.isArray(parsed.configuredPlatforms)) {
       return null;
     }
-    return parsed;
+
+    const configuredPlatforms = [...new Set(parsed.configuredPlatforms.map((id) => String(id).trim()).filter(Boolean))];
+    return {
+      ...parsed,
+      configuredPlatforms,
+      configuredCount: Number(parsed.configuredCount) || configuredPlatforms.length,
+      coverageScore: Number(parsed.coverageScore) || 0,
+      platformHealth: Array.isArray(parsed.platformHealth) ? parsed.platformHealth : []
+    };
   } catch {
     return null;
   }

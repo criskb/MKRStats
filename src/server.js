@@ -60,17 +60,43 @@ function selectPlatforms(rawPlatformData, selectedPlatform, connected = []) {
   return scoped.filter((platform) => connectedSet.has(platform.id));
 }
 
+
+function buildCollectionSummary(platformData, connected) {
+  const dataPoints = platformData.reduce((acc, platform) => {
+    const seriesRows = platform.snapshot?.series?.length ?? 0;
+    const modelRows = platform.snapshot?.models?.length ?? 0;
+    return acc + seriesRows * 4 + modelRows * 4;
+  }, 0);
+
+  const freshnessMinutes = platformData
+    .map((platform) => Date.parse(platform.snapshot?.fetchedAt ?? '') || Date.now())
+    .map((timestamp) => Math.max(0, Math.round((Date.now() - timestamp) / 60000)));
+
+  return {
+    source: 'configured_platform_connectors',
+    requestedConnectedPlatforms: connected,
+    activePlatforms: platformData.map((platform) => platform.id),
+    platformCoveragePct: connected.length ? Math.round((platformData.length / connected.length) * 100) : 100,
+    estimatedDataPoints: dataPoints,
+    maxSnapshotAgeMinutes: freshnessMinutes.length ? Math.max(...freshnessMinutes) : 0
+  };
+}
+
 async function getOverviewPayload(url) {
   const { horizon, selectedPlatform, connected } = normalizeScope(url);
   const rawPlatformData = await fetchAllPlatformStats();
   const platformData = selectPlatforms(rawPlatformData, selectedPlatform, connected);
 
   if (platformData.length === 0) {
-    return { status: 404, error: { message: `Platform '${selectedPlatform}' not found` } };
+    const detail = connected.length
+      ? `No data found for configured connections: ${connected.join(', ')}`
+      : `Platform '${selectedPlatform}' not found`;
+    return { status: 404, error: { message: detail } };
   }
 
   const aggregated = aggregatePortfolioData(platformData);
   const benchmarks = buildGlobalBenchmarks(platformData);
+  const collection = buildCollectionSummary(platformData, connected);
 
   return {
     status: 200,
@@ -83,6 +109,7 @@ async function getOverviewPayload(url) {
       platforms: platformData,
       benchmarks,
       aggregated,
+      collection,
       forecast: {
         revenue: forecastNextDays(aggregated.timeline, 'revenue', horizon),
         sales: forecastNextDays(aggregated.timeline, 'sales', horizon)

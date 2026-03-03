@@ -12,16 +12,34 @@ import { loadConnectionMeta } from './profile/secureStore.js';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
-function getConnectedPlatforms() {
+function getConnectionScope() {
   const meta = loadConnectionMeta();
-  if (!meta?.configuredPlatforms?.length) {
-    return [];
-  }
-  return meta.configuredPlatforms;
+  const configuredPlatforms = meta?.configuredPlatforms ?? [];
+
+  return {
+    configuredPlatforms,
+    hasConfiguredScope: configuredPlatforms.length > 0,
+    meta
+  };
 }
 
 function renderSkeleton(root) {
   root.innerHTML = '<div class="widget col-12"><div class="widget__content">Loading our stats...</div></div>';
+}
+
+function renderScopeNotice(root, scope) {
+  if (scope.hasConfiguredScope) {
+    root.insertAdjacentHTML(
+      'afterbegin',
+      `<section class="widget col-12"><div class="widget__content">Scoped to ${scope.configuredPlatforms.length} configured platform(s). Data refreshes every 5 minutes.</div></section>`
+    );
+    return;
+  }
+
+  root.insertAdjacentHTML(
+    'afterbegin',
+    '<section class="widget col-12"><div class="widget__content">No platform connections configured yet. Showing full portfolio fallback. Go to Settings / Profile and save connections to enable strict scoped stats.</div></section>'
+  );
 }
 
 async function renderOurStats() {
@@ -29,11 +47,11 @@ async function renderOurStats() {
   renderSkeleton(root);
 
   try {
-    const connectedPlatforms = getConnectedPlatforms();
+    const scope = getConnectionScope();
     const data = await getOverview({
       platform: 'all',
       horizon: 30,
-      connected: connectedPlatforms
+      connected: scope.configuredPlatforms
     });
 
     root.innerHTML = '';
@@ -58,6 +76,7 @@ async function renderOurStats() {
       topModels.node
     );
 
+    renderScopeNotice(root, scope);
     mountBrandSummaryWidget(summary.content, data);
     mountOverviewWidget(kpi.content, data.aggregated.totals);
     mountPerformanceChart(trend.content, data.aggregated.timeline);
