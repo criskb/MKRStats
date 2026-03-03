@@ -1,4 +1,4 @@
-import { getPlatforms } from '../api/client.js';
+import { getPlatforms, upsertConnection } from '../api/client.js';
 import {
   encryptPayload,
   decryptPayload,
@@ -98,8 +98,36 @@ async function initProfile() {
         const encrypted = await encryptPayload({ values, updatedAt: new Date().toISOString() }, passphraseInput.value);
         saveEncryptedConnections(encrypted);
         saveConnectionMeta(values);
+
+        const upserts = Object.entries(values)
+          .map(([platformId, config]) => {
+            const accountId = config.handle?.trim?.() || 'default';
+            const apiKey = config.apiKey?.trim?.() || '';
+            const handle = config.handle?.trim?.() || '';
+
+            if (!handle && !apiKey) {
+              return null;
+            }
+
+            return upsertConnection({
+              platformId,
+              accountId,
+              authType: 'apiKey',
+              credential: {
+                handle,
+                apiKey
+              },
+              status: apiKey ? 'active' : 'pending',
+              lastValidatedAt: null,
+              lastError: null
+            });
+          })
+          .filter(Boolean);
+
+        await Promise.all(upserts);
+
         const configured = Object.values(values).filter((row) => row.handle?.trim?.() || row.apiKey?.trim?.()).length;
-        status(`Settings saved encrypted in localStorage. ${configured} platform(s) configured for Our Stats scope.`);
+        status(`Settings saved. ${configured} platform(s) encrypted in browser and synced to backend.`);
       } catch (error) {
         status(`Unable to save settings: ${error.message}`, true);
       }

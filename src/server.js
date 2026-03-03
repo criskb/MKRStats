@@ -7,6 +7,7 @@ import { fetchAllPlatformStats } from './services/connectors/platformConnectorSe
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
 import { forecastNextDays } from './services/predictions/forecastService.js';
 import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
+import { getConnectionStatuses, upsertConnectionConfig } from './services/connectors/connectionConfigStore.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __filename = fileURLToPath(import.meta.url);
@@ -38,6 +39,34 @@ function sendJson(res, status, payload) {
     'Access-Control-Allow-Origin': '*'
   });
   res.end(JSON.stringify(payload));
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 1_000_000) {
+        reject(new Error('Request body too large'));
+      }
+    });
+
+    req.on('end', () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+
+    req.on('error', (error) => reject(error));
+  });
 }
 
 function sendCsv(res, filename, text) {
@@ -188,6 +217,16 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.end();
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
     return;
@@ -203,6 +242,27 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/overview') {
     await handleOverview(req, res, url);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/connections') {
+    try {
+      const payload = await readJsonBody(req);
+      const saved = await upsertConnectionConfig(payload);
+      sendJson(res, 200, { connection: saved });
+    } catch (error) {
+      sendJson(res, 400, { message: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/connections') {
+    try {
+      const connections = await getConnectionStatuses();
+      sendJson(res, 200, { connections });
+    } catch (error) {
+      sendJson(res, 500, { message: 'Failed to load connections', details: error.message });
+    }
     return;
   }
 
