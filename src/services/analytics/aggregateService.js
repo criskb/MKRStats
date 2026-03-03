@@ -36,6 +36,7 @@ export function aggregatePortfolioData(platformPayload) {
         date: row.date,
         views: 0,
         downloads: 0,
+        likes: 0,
         sales: 0,
         revenue: 0
       };

@@ -3,7 +3,6 @@ import { readFile } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PLATFORM_CONFIG } from './config/platforms.js';
-import { fetchAllPlatformStats } from './services/connectors/platformConnectorService.js';
 import { aggregatePortfolioData } from './services/analytics/aggregateService.js';
 import { forecastNextDays } from './services/predictions/forecastService.js';
 import { buildGlobalBenchmarks } from './services/benchmarks/globalBenchmarkService.js';
@@ -109,6 +108,54 @@ function sendJson(res, status, payload) {
     'Access-Control-Allow-Origin': '*'
   });
   res.end(JSON.stringify(payload));
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 1_000_000) {
+        reject(new Error('Request body too large'));
+      }
+    });
+
+    req.on('end', () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+
+    req.on('error', (error) => reject(error));
+  });
+}
+
+
+
+function isAllowedBridgeOrigin(req) {
+  const configured = String(process.env.MKRSTATS_BRIDGE_ALLOWED_ORIGINS ?? '').trim();
+  if (!configured) return true;
+
+  const origin = String(req.headers.origin ?? '').trim();
+  if (!origin) return false;
+
+  const allowedOrigins = configured.split(',').map((value) => value.trim()).filter(Boolean);
+  if (allowedOrigins.includes('*')) return true;
+  return allowedOrigins.includes(origin);
+}
+
+function getBridgeCredentials(req) {
+  const token = String(req.headers['x-bridge-api-token'] ?? '').trim();
+  const session = String(req.headers['x-bridge-session'] ?? '').trim();
+  return { token, session };
 }
 
 function sendCsv(res, filename, text) {
@@ -238,6 +285,16 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.end();
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
     return;
@@ -267,8 +324,84 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/connections') {
+    try {
+      const payload = await readJsonBody(req);
+      const saved = await upsertConnectionConfig(payload);
+      sendJson(res, 200, { connection: saved });
+    } catch (error) {
+      sendJson(res, 400, { message: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/connections') {
+    try {
+      const connections = await getConnectionStatuses();
+      sendJson(res, 200, { connections });
+    } catch (error) {
+      sendJson(res, 500, { message: 'Failed to load connections', details: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/bridge_ingest') {
+    try {
+      if (!isAllowedBridgeOrigin(req)) {
+        sendJson(res, 403, { message: 'Bridge ingest origin is not allowed.' });
+        return;
+      }
+
+      const payload = await readJsonBody(req);
+      const credentials = getBridgeCredentials(req);
+      const authenticated = await authenticateBridgeSubmission({
+        platformId: payload.platform,
+        accountHandle: payload.accountHandle,
+        apiToken: credentials.token,
+        sessionId: credentials.session
+      });
+
+      if (!authenticated) {
+        sendJson(res, 401, { message: 'Invalid bridge authentication credentials.' });
+        return;
+      }
+
+      const result = await processBridgeIngest(payload);
+      sendJson(res, 202, { accepted: true, result });
+    } catch (error) {
+      sendJson(res, 400, { message: error.message });
+    }
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/export.csv') {
     await handleExportCsv(req, res, url);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/collection/status') {
+    try {
+      const requestedLimit = Number(url.searchParams.get('limit') ?? 20);
+      const runs = await readRecentCollectionRuns(requestedLimit);
+      const latestBridgeIngestAt = await readLatestBridgeIngestCapturedAt();
+      const latestRun = runs[0] ? formatRunSummary(runs[0]) : null;
+      const freshnessMinutes = latestBridgeIngestAt
+        ? Math.max(0, Math.round((Date.now() - Date.parse(latestBridgeIngestAt)) / 60000))
+        : null;
+
+      sendJson(res, 200, {
+        generatedAt: new Date().toISOString(),
+        latestRun,
+        bridgeIngest: {
+          latestCapturedAt: latestBridgeIngestAt,
+          freshnessMinutes,
+          healthy: freshnessMinutes == null ? false : freshnessMinutes <= Number(process.env.MKRSTATS_BRIDGE_FRESHNESS_SLA_MINUTES ?? 120)
+        },
+        runs: runs.map(formatRunSummary)
+      });
+    } catch (error) {
+      sendJson(res, 500, { message: 'Failed to load collection run status', details: error.message });
+    }
     return;
   }
 
