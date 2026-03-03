@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { lastNDays } from '../../utils/date.js';
 
 const MODELS = [
@@ -8,9 +9,123 @@ const MODELS = [
   'Phone Stand Mini'
 ];
 
+const DEFAULT_TIMEOUT_MS = Number(process.env.MKRSTATS_CONNECTOR_TIMEOUT_MS ?? 12000);
+const DEFAULT_RETRY_ATTEMPTS = Number(process.env.MKRSTATS_CONNECTOR_RETRY_ATTEMPTS ?? 2);
+const DEFAULT_RETRY_DELAY_MS = Number(process.env.MKRSTATS_CONNECTOR_RETRY_DELAY_MS ?? 400);
+
 function seededRandom(seed) {
   const value = Math.sin(seed) * 10000;
   return value - Math.floor(value);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isMockFallbackEnabled() {
+  return String(process.env.MKRSTATS_USE_MOCK_DATA ?? '').trim().toLowerCase() === 'true';
+}
+
+export async function withTimeout(taskFactory, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  let timeoutHandle;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      const error = new Error(`Connector request timed out after ${timeoutMs}ms.`);
+      error.code = 'CONNECTOR_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([taskFactory(), timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+export async function requestWithRetry(taskFactory, {
+  attempts = DEFAULT_RETRY_ATTEMPTS,
+  baseDelayMs = DEFAULT_RETRY_DELAY_MS,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  shouldRetry = () => true
+} = {}) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= attempts; attempt += 1) {
+    try {
+      return await withTimeout(taskFactory, timeoutMs);
+    } catch (error) {
+      lastError = error;
+      const canRetry = attempt < attempts && shouldRetry(error, attempt + 1);
+      if (!canRetry) {
+        throw error;
+      }
+
+      const backoffMs = baseDelayMs * (2 ** attempt);
+      await wait(backoffMs);
+    }
+  }
+
+  throw lastError;
+}
+
+export async function paginate(fetchPage, {
+  startPage = 1,
+  maxPages = 50,
+  getNextPage = (pagePayload, currentPage) => (pagePayload?.nextPage ?? (currentPage + 1))
+} = {}) {
+  const rows = [];
+  let page = startPage;
+
+  for (let traversed = 0; traversed < maxPages && page != null; traversed += 1) {
+    const payload = await fetchPage(page);
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    rows.push(...items);
+
+    page = getNextPage(payload, page);
+  }
+
+  return rows;
+}
+
+export function normalizeSeriesRow(row = {}) {
+  return {
+    date: String(row.date ?? '').slice(0, 10),
+    views: Number(row.views ?? 0),
+    downloads: Number(row.downloads ?? 0),
+    sales: Number(row.sales ?? 0),
+    revenue: Number(Number(row.revenue ?? 0).toFixed(2))
+  };
+}
+
+export function normalizeModelRow(row = {}) {
+  const downloads = Number(row.downloads ?? 0);
+  const sales = Number(row.sales ?? 0);
+
+  return {
+    id: String(row.id ?? row.title ?? crypto.randomUUID?.() ?? `${Date.now()}`),
+    title: String(row.title ?? 'Untitled Model'),
+    downloads,
+    sales,
+    revenue: Number(Number(row.revenue ?? 0).toFixed(2)),
+    conversionRate: Number((((sales / Math.max(downloads, 1)) * 100)).toFixed(2))
+  };
+}
+
+export function normalizeSnapshot(platformId, snapshot = {}) {
+  const series = Array.isArray(snapshot.series) ? snapshot.series.map(normalizeSeriesRow) : [];
+  const models = Array.isArray(snapshot.models)
+    ? snapshot.models.map(normalizeModelRow).sort((a, b) => b.revenue - a.revenue)
+    : [];
+
+  return {
+    platformId,
+    series,
+    models,
+    fetchedAt: snapshot.fetchedAt ?? new Date().toISOString(),
+    source: snapshot.source ?? 'platform_connector'
+  };
 }
 
 export function buildMockPlatformSnapshot(platformId) {
@@ -41,11 +156,10 @@ export function buildMockPlatformSnapshot(platformId) {
     };
   }).sort((a, b) => b.revenue - a.revenue);
 
-  return {
-    platformId,
-    connected: true,
+  return normalizeSnapshot(platformId, {
     fetchedAt: new Date().toISOString(),
+    source: 'mock_connector_fallback',
     series,
     models
-  };
+  });
 }
