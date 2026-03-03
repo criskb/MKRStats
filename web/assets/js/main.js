@@ -61,7 +61,7 @@ function renderDashboard(dashboard, platforms, data) {
     init();
   });
 
-  mountInsightsWidget(insights.content, data.aggregated.insights, data.forecast.revenue);
+  mountInsightsWidget(insights.content, data.aggregated.insights, data.forecast.revenue, data);
   mountOverviewWidget(overview.content, data.aggregated.totals);
   mountDeltaWidget(deltas.content, data.aggregated.kpiDeltas);
   mountScenarioWidget(scenario.content, data.forecast.revenue);

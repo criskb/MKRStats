@@ -334,3 +334,70 @@ body {
   padding: 0.55rem 0.9rem;
   width: fit-content;
 }
+
+.brand-summary {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.brand-summary p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.brand-summary strong {
+  color: var(--text);
+}
+
+.segmented-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.segmented-controls button {
+  background: #1d2736;
+  color: #cde3ff;
+  border: 1px solid #324159;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.segmented-controls button.is-active {
+  background: #2b4f83;
+}
+
+.segmented-label {
+  color: var(--muted);
+  margin-left: auto;
+  font-size: 0.82rem;
+}
+
+.inline-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.inline-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.inline-controls select {
+  background: #121926;
+  color: var(--text);
+  border: 1px solid #334057;
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+}
+
+.delta-card.is-up p { color: #7de6b8; }
+.delta-card.is-down p { color: #ff9b9b; }
+.delta-card.is-flat p { color: #d6def0; }

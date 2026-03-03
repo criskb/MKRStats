@@ -55,6 +55,7 @@ src/
 
 web/
   index.html
+  our-stats.html                  # Dedicated tab/page for our own stats
   profile.html                    # Settings/profile page
   assets/
     css/
@@ -71,9 +72,9 @@ web/
         controlsWidget.js         # Filter controls (platform/horizon)
         insightsWidget.js         # Executive insight bullets
         overviewWidget.js         # KPI summary
-        performanceChartWidget.js # Downloads/Sales trends
+        performanceChartWidget.js # Interactive trend chart mode selector
         forecastWidget.js         # Revenue forecast with 90% band
-        topModelsWidget.js        # Model leaderboard
+        topModelsWidget.js        # Sortable model leaderboard
         platformRevenueWidget.js  # Revenue comparison by marketplace
         funnelWidget.js           # Views->downloads->sales funnel
         scenarioWidget.js         # Forecast scenarios + confidence
@@ -83,6 +84,7 @@ web/
       profile/
         secureStore.js            # AES-GCM encrypted local storage helper
         main.js                   # profile/settings interactions
+      ourStatsMain.js             # Our Stats page composition
       main.js                     # Dashboard composition
 
 test/
@@ -132,3 +134,11 @@ npm test
 - Sensitive values are encrypted in the browser using AES-GCM.
 - The encryption key is derived from your passphrase with PBKDF2 and the passphrase is never stored.
 - Encrypted blobs are stored in `localStorage` and can be cleared locally at any time.
+
+
+## Interactive widget UX
+
+- Trend widget supports mode switching (Commerce / Awareness / Revenue) without reloading.
+- Top models widget supports in-place sorting by revenue, downloads, or conversion.
+- Control panel updates CSV export URL dynamically when filters change.
+- KPI delta cards are color-coded for up/down/flat momentum at a glance.

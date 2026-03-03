@@ -20,11 +20,23 @@ export function mountControlsWidget(container, platforms, state, onApply) {
     </label>
     <div class="control-actions">
       <button type="submit" class="button-primary">Apply Filters</button>
-      <a class="button-secondary" href="${getExportUrl(state)}">Export CSV</a>
+      <a class="button-secondary" id="export-link" href="${getExportUrl(state)}">Export CSV</a>
     </div>
   `;
 
   wrapper.platform.value = state.platform;
+
+  const exportLink = wrapper.querySelector('#export-link');
+  const syncExportLink = () => {
+    const localState = {
+      platform: wrapper.platform.value,
+      horizon: Number(wrapper.horizon.value)
+    };
+    exportLink.setAttribute('href', getExportUrl(localState));
+  };
+
+  wrapper.platform.addEventListener('change', syncExportLink);
+  wrapper.horizon.addEventListener('input', syncExportLink);
 
   wrapper.addEventListener('submit', (event) => {
     event.preventDefault();
