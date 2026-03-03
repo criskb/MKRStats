@@ -116,8 +116,16 @@ test/
 ## Run locally
 
 ```bash
+npm run dev
+```
+
+Or production-style:
+
+```bash
 npm start
 ```
+
+If you accidentally type `node run dev`, this repo now includes a small `run` shim that forwards to `npm run <script>` for convenience.
 
 Open http://localhost:3000
 
