@@ -34,3 +34,29 @@ export async function getOverview(params = { platform: 'all', horizon: 14 }) {
 export function getExportUrl(params = { platform: 'all', horizon: 14 }) {
   return `/api/export.csv?${queryString(params)}`;
 }
+
+export async function upsertConnection(config) {
+  const response = await fetch('/api/connections', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(config)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to save connection: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getConnections() {
+  const response = await fetch('/api/connections');
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch connections: ${response.status}`);
+  }
+
+  return response.json();
+}
