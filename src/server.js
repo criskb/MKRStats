@@ -19,6 +19,13 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8'
 };
 
+function normalizeScope(url) {
+  const requestedHorizon = Number(url.searchParams.get('horizon') ?? 14);
+  const horizon = Number.isFinite(requestedHorizon) ? Math.max(7, Math.min(60, Math.floor(requestedHorizon))) : 14;
+  const selectedPlatform = url.searchParams.get('platform') ?? 'all';
+  return { horizon, selectedPlatform };
+}
+
 function sendJson(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -27,20 +34,81 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-async function handleOverview(req, res) {
-  try {
-    const platformData = await fetchAllPlatformStats();
-    const aggregated = aggregatePortfolioData(platformData);
+function sendCsv(res, filename, text) {
+  res.writeHead(200, {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Access-Control-Allow-Origin': '*'
+  });
+  res.end(text);
+}
 
-    sendJson(res, 200, {
+function selectPlatforms(rawPlatformData, selectedPlatform) {
+  return selectedPlatform === 'all'
+    ? rawPlatformData
+    : rawPlatformData.filter((platform) => platform.id === selectedPlatform);
+}
+
+async function getOverviewPayload(url) {
+  const { horizon, selectedPlatform } = normalizeScope(url);
+  const rawPlatformData = await fetchAllPlatformStats();
+  const platformData = selectPlatforms(rawPlatformData, selectedPlatform);
+
+  if (platformData.length === 0) {
+    return { status: 404, error: { message: `Platform '${selectedPlatform}' not found` } };
+  }
+
+  const aggregated = aggregatePortfolioData(platformData);
+
+  return {
+    status: 200,
+    payload: {
       generatedAt: new Date().toISOString(),
+      selectedPlatform,
+      horizon,
+      sampleWindowDays: aggregated.timeline.length,
       platforms: platformData,
       aggregated,
       forecast: {
-        revenue: forecastNextDays(aggregated.timeline, 'revenue', 14),
-        sales: forecastNextDays(aggregated.timeline, 'sales', 14)
+        revenue: forecastNextDays(aggregated.timeline, 'revenue', horizon),
+        sales: forecastNextDays(aggregated.timeline, 'sales', horizon)
       }
+    }
+  };
+}
+
+async function handleOverview(_req, res, url) {
+  try {
+    const overview = await getOverviewPayload(url);
+    if (overview.status !== 200) {
+      sendJson(res, overview.status, overview.error);
+      return;
+    }
+
+    sendJson(res, 200, overview.payload);
+  } catch (error) {
+    sendJson(res, 500, {
+      message: 'Unexpected server error',
+      details: error.message
     });
+  }
+}
+
+async function handleExportCsv(_req, res, url) {
+  try {
+    const overview = await getOverviewPayload(url);
+    if (overview.status !== 200) {
+      sendJson(res, overview.status, overview.error);
+      return;
+    }
+
+    const { payload } = overview;
+    const header = 'date,views,downloads,sales,revenue\n';
+    const rows = payload.aggregated.timeline
+      .map((row) => `${row.date},${row.views},${row.downloads},${row.sales},${row.revenue}`)
+      .join('\n');
+
+    sendCsv(res, `mkrstats-${payload.selectedPlatform}-${payload.generatedAt.slice(0, 10)}.csv`, `${header}${rows}\n`);
   } catch (error) {
     sendJson(res, 500, {
       message: 'Unexpected server error',
@@ -77,18 +145,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/health') {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  if (req.method === 'GET' && url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok' });
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/api/platforms') {
+  if (req.method === 'GET' && url.pathname === '/api/platforms') {
     sendJson(res, 200, { platforms: PLATFORM_CONFIG });
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/api/overview') {
-    await handleOverview(req, res);
+  if (req.method === 'GET' && url.pathname === '/api/overview') {
+    await handleOverview(req, res, url);
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/export.csv') {
+    await handleExportCsv(req, res, url);
     return;
   }
 

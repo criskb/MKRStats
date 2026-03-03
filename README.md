@@ -1,13 +1,13 @@
 # MKRStats
 
-MKRStats is a Node.js web app scaffold for a **multi-platform 3D model brand intelligence dashboard**. It centralizes marketplace traffic and commerce data (downloads, sales, revenue, and engagement) from platforms like Cults3D, MakerWorld, Thangs, and Printables, then transforms those streams into KPI widgets, trend graphs, top-model rankings, and short-horizon sales/revenue predictions.
+MKRStats is a Node.js web app scaffold for a **multi-platform 3D model brand intelligence dashboard**. It centralizes marketplace traffic and commerce data (downloads, sales, revenue, and engagement) from platforms like Cults3D, MakerWorld, Thangs, and Printables, then transforms those streams into KPI widgets, trend graphs, top-model rankings, platform comparison views, and scenario-based sales/revenue forecasts with confidence bands.
 
 ## Product goals
 
 - Connect one brand identity across marketplaces.
 - Aggregate performance into a single analytics view.
 - Track growth drivers: views → downloads → conversions → revenue.
-- Forecast short-term sales and revenue with explainable methods.
+- Forecast short-term sales and revenue with explainable methods, intervals, and scenario ranges.
 - Keep UI modular through reusable dashboard widgets.
 
 ## Proposed high-level architecture
@@ -35,8 +35,6 @@ MKRStats is a Node.js web app scaffold for a **multi-platform 3D model brand int
 └──────────────────────┘
 ```
 
-> Current implementation includes **mock connector snapshots** so UI and analytics pipelines are production-like while real platform integrations are developed.
-
 ## Folder structure (modular widget-first)
 
 ```text
@@ -48,9 +46,9 @@ src/
       baseConnector.js            # Mock/fallback snapshot builder
       platformConnectorService.js # Unified fetch service
     analytics/
-      aggregateService.js         # Timeline + top-model aggregation
+      aggregateService.js         # Timeline + KPI aggregation + insights
     predictions/
-      forecastService.js          # Linear regression forecasting
+      forecastService.js          # Regression + interval + scenarios
   utils/
     date.js                       # Date range helpers
   server.js                       # Native Node HTTP server + API/static routing
@@ -69,54 +67,46 @@ web/
         chart.js                  # Chart wrapper
         table.js                  # Generic table
       widgets/
+        controlsWidget.js         # Filter controls (platform/horizon)
+        insightsWidget.js         # Executive insight bullets
         overviewWidget.js         # KPI summary
         performanceChartWidget.js # Downloads/Sales trends
-        forecastWidget.js         # Future revenue chart
+        forecastWidget.js         # Revenue forecast with 90% band
         topModelsWidget.js        # Model leaderboard
-        platformGridWidget.js     # Connector status/coverage
+        platformRevenueWidget.js  # Revenue comparison by marketplace
+        funnelWidget.js           # Views->downloads->sales funnel
+        scenarioWidget.js         # Forecast scenarios + confidence
+        deltaWidget.js            # 7-day KPI momentum deltas
+        platformGridWidget.js     # Connector status/coverage table
       main.js                     # Dashboard composition
 
 test/
-  forecastService.test.js         # Node test for prediction logic
+  forecastService.test.js         # Forecast output behavior
+  aggregateService.test.js        # Aggregation + insight behavior
 ```
-
-## How predictions are calculated
-
-- The app computes a simple linear regression over the past 30 daily points.
-- It forecasts the next 14 days for:
-  - `revenue`
-  - `sales`
-- Returned metadata includes method name, slope, and per-day projected values.
-
-This is intentionally explainable and lightweight; for production you can add Prophet/XGBoost/LSTM models behind the same `forecastService` interface.
 
 ## API response shape
 
-`GET /api/overview` returns:
+`GET /api/overview?platform=all|<platformId>&horizon=7..60` returns:
 
-- `platforms`: each platform config + normalized snapshot.
+`GET /api/export.csv?platform=all|<platformId>&horizon=7..60` downloads timeline data as CSV.
+
+- `platforms`: selected platform configs + snapshots.
 - `aggregated`:
   - `totals`
   - `timeline`
   - `topModels`
+  - `platformSummaries`
+  - `insights`
+  - `funnel`
+  - `kpiDeltas`
 - `forecast`:
-  - `revenue`
-  - `sales`
-
-## Next production steps
-
-1. **OAuth + secure secrets** per platform.
-2. **Persistent storage** (Postgres + Timescale hypertables recommended).
-3. **Job queue** (BullMQ) for API pulls and scraper fallback.
-4. **Attribution model** for campaign/source-level impact.
-5. **Cohort and retention widgets** for repeat buyers/downloaders.
-6. **Scenario engine** (e.g., "what if conversion improves by 2%?").
-7. **Role-based workspaces** for multi-brand or agency usage.
+  - `revenue` (baseline + 90% interval + scenarios + confidence score)
+  - `sales` (baseline + 90% interval + scenarios + confidence score)
 
 ## Run locally
 
 ```bash
-npm install
 npm start
 ```
 

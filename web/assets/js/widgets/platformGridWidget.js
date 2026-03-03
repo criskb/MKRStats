@@ -1,14 +1,26 @@
 import { renderTable } from '../components/table.js';
 
-export function mountPlatformGridWidget(container, platforms) {
+const usd = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0
+});
+
+export function mountPlatformGridWidget(container, platforms, platformSummaries) {
+  const summaryMap = new Map(platformSummaries.map((row) => [row.platformId, row]));
+
   renderTable(
     container,
-    ['Platform', 'Mode', 'Tracked Metrics', 'Connected'],
-    platforms.map((platform) => [
-      platform.name,
-      `<span class="pill">${platform.integrationMode}</span>`,
-      platform.metrics.join(', '),
-      platform.snapshot.connected ? 'Yes' : 'No'
-    ])
+    ['Platform', 'Mode', 'Revenue', 'Downloads', 'Conv %'],
+    platforms.map((platform) => {
+      const summary = summaryMap.get(platform.id);
+      return [
+        platform.name,
+        `<span class="pill">${platform.integrationMode}</span>`,
+        summary ? usd.format(summary.revenue) : '-',
+        summary ? summary.downloads.toLocaleString() : '-',
+        summary ? `${summary.conversionRate}%` : '-'
+      ];
+    })
   );
 }
