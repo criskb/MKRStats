@@ -94,9 +94,9 @@ test/
 
 ## API response shape
 
-`GET /api/overview?platform=all|<platformId>&horizon=7..60` returns:
+`GET /api/overview?platform=all|<platformId>&horizon=7..3650` returns:
 
-`GET /api/export.csv?platform=all|<platformId>&horizon=7..60` downloads timeline data as CSV.
+`GET /api/export.csv?platform=all|<platformId>&horizon=7..3650` downloads timeline data as CSV.
 
 - `platforms`: selected platform configs + snapshots.
 - `aggregated`:
@@ -116,8 +116,16 @@ test/
 ## Run locally
 
 ```bash
+npm run dev
+```
+
+Or production-style:
+
+```bash
 npm start
 ```
+
+If you accidentally type `node run dev`, this repo now includes a small `run` shim that forwards to `npm run <script>` for convenience.
 
 Open http://localhost:3000
 
@@ -134,6 +142,7 @@ npm test
 - Sensitive values are encrypted in the browser using AES-GCM.
 - The encryption key is derived from your passphrase with PBKDF2 and the passphrase is never stored.
 - Encrypted blobs are stored in `localStorage` and can be cleared locally at any time.
+- Server-side connection storage uses encrypted credential blobs when `CONNECTION_MASTER_KEY` is set; without it, the app falls back to plaintext server storage for local/dev convenience.
 
 
 ## Interactive widget UX
@@ -142,3 +151,10 @@ npm test
 - Top models widget supports in-place sorting by revenue, downloads, or conversion.
 - Control panel updates CSV export URL dynamically when filters change.
 - KPI delta cards are color-coded for up/down/flat momentum at a glance.
+
+
+## Design system direction
+
+- The current UI now uses shadcn-inspired design primitives (tokens for background/card/border/foreground, flat controls, and neutral-contrast surfaces) adapted to this vanilla JS app.
+- If you want to fully adopt the Once UI Next.js starter, the next step is a framework migration from the current Node + static frontend architecture to Next.js.
+

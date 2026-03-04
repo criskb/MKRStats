@@ -84,14 +84,18 @@ async function fetchPlatformSnapshot(platform, activeConnections) {
   const registration = getConnectorRegistration(platform.id);
 
   if (activeConnections.length === 0) {
-    const snapshot = normalizeSnapshot(platform.id, { source: 'connector_unavailable', series: [], models: [] });
+    const snapshot = buildMockPlatformSnapshot(platform.id, 'no_connection');
     return {
       ...platform,
       snapshot,
       metadata: buildConnectorMetadata({
-        status: 'error',
+        status: 'ok',
+        usedMockData: true,
         quality: snapshot.quality,
-        error: { code: 'NO_ACTIVE_CONNECTION', message: `No active connection configured for ${platform.id}.` },
+        error: {
+          code: 'NO_ACTIVE_CONNECTION',
+          message: `No active connection configured for ${platform.id}; showing demo data.`
+        },
         accounts: { configured: 0, successful: 0, failed: 0 },
         capabilities: registration?.capabilities ?? null
       })
@@ -201,7 +205,7 @@ function logConnectorEvent(event, payload = {}) {
 
 export async function fetchAllPlatformStats({ correlationId = null, runId = null } = {}) {
   logConnectorEvent('collection.connector_batch.started', { correlationId, runId });
-  const connections = await getConnectionStatuses();
+  const connections = await getConnectionStatuses({ includeCredentials: true });
 
   const platformStats = await Promise.all(
     PLATFORM_CONFIG.map(async (platform) => {
