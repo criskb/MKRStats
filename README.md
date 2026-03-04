@@ -151,3 +151,10 @@ npm test
 - Top models widget supports in-place sorting by revenue, downloads, or conversion.
 - Control panel updates CSV export URL dynamically when filters change.
 - KPI delta cards are color-coded for up/down/flat momentum at a glance.
+
+
+## Design system direction
+
+- The current UI now uses shadcn-inspired design primitives (tokens for background/card/border/foreground, flat controls, and neutral-contrast surfaces) adapted to this vanilla JS app.
+- If you want to fully adopt the Once UI Next.js starter, the next step is a framework migration from the current Node + static frontend architecture to Next.js.
+

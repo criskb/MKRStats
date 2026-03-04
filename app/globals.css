@@ -1,0 +1,10 @@
+@import "../web/assets/css/main.css";
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+a {
+  color: inherit;
+}

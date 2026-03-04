@@ -1131,3 +1131,170 @@ body {
 .top-nav a {
   background: #2f2f2f;
 }
+
+/* Shadcn-inspired primitive layer for current vanilla stack */
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #111113;
+  --card-foreground: #fafafa;
+  --popover: #111113;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: #18181b;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #fafafa;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #d4d4d8;
+  --radius: 12px;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+.page-header {
+  background: transparent;
+  border: 0;
+}
+
+.page-header p,
+.security-note,
+.scenario-note,
+.funnel__meta,
+.funnel__rates,
+.segmented-label,
+.inline-controls label,
+.kpi-card__label,
+.profile-row label,
+.delta-card h4,
+.global-bar label,
+.brand-summary p {
+  color: var(--muted-foreground);
+}
+
+.widget {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.01) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.widget__header {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  padding: 0.9rem 1rem;
+  color: var(--foreground);
+}
+
+.top-nav a,
+.mode-tab,
+.segmented-controls button,
+.button-secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.top-nav a[aria-current='page'],
+.mode-tab--active,
+.segmented-controls button.is-active,
+.button-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+  box-shadow: none;
+}
+
+.button-danger {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  border: 1px solid var(--destructive);
+}
+
+.global-bar {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+.global-bar select,
+.control-field select,
+.control-field input,
+.profile-row input,
+.inline-controls select {
+  background: #0f0f10;
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: 10px;
+}
+
+.kpi-card,
+.profile-row,
+.scenario-card,
+.delta-card,
+.funnel__bar,
+.segment-bar {
+  background: #0f0f10;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.pill {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.pill--live {
+  background: #3f0d1f;
+  color: #fecdd3;
+}
+
+.health-pill--ok {
+  background: #0f2c1d;
+  color: #86efac;
+  border-color: #14532d;
+}
+
+.health-pill--rate_limited,
+.health-pill--stale {
+  background: #3f2a08;
+  color: #fcd34d;
+  border-color: #78350f;
+}
+
+.health-pill--auth_required {
+  background: #3a1212;
+  color: #fda4af;
+  border-color: #7f1d1d;
+}
+
+.segment-bar {
+  overflow: hidden;
+}
+
+.segment-bar__item {
+  background: #e4e4e7;
+  color: #09090b;
+  border-right: 1px solid #a1a1aa;
+}
+
+.segment-bar__item:nth-child(2n) { background: #d4d4d8; }
+.segment-bar__item:nth-child(3n) { background: #a1a1aa; color: #09090b; }
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+}
