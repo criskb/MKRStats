@@ -1,0 +1,28 @@
+#!/usr/bin/env node
+import { spawn } from 'node:child_process';
+
+const [, , scriptName, ...scriptArgs] = process.argv;
+
+if (!scriptName) {
+  console.error('Usage: node run <script> [...args]');
+  console.error('Example: node run dev');
+  process.exit(1);
+}
+
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const child = spawn(npmCommand, ['run', scriptName, '--', ...scriptArgs], {
+  stdio: 'inherit'
+});
+
+child.on('exit', (code, signal) => {
+  if (signal) {
+    process.kill(process.pid, signal);
+    return;
+  }
+  process.exit(code ?? 1);
+});
+
+child.on('error', (error) => {
+  console.error(`Failed to execute npm run ${scriptName}: ${error.message}`);
+  process.exit(1);
+});
