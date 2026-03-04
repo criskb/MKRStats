@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'mkrstats_secure_connections_v1';
+const PLAIN_STORAGE_KEY = 'mkrstats_plain_connections_v1';
 const CONNECTION_META_KEY = 'mkrstats_connection_meta_v1';
 
 function toBase64(buffer) {
@@ -90,6 +91,25 @@ export function loadEncryptedConnections() {
 
 export function saveEncryptedConnections(payload) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  localStorage.removeItem(PLAIN_STORAGE_KEY);
+}
+
+export function loadPlainConnections() {
+  const raw = localStorage.getItem(PLAIN_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function savePlainConnections(values = {}) {
+  localStorage.setItem(PLAIN_STORAGE_KEY, JSON.stringify({ values, updatedAt: new Date().toISOString() }));
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 export function saveConnectionMeta(values = {}) {
@@ -132,5 +152,6 @@ export function loadConnectionMeta() {
 
 export function clearEncryptedConnections() {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(PLAIN_STORAGE_KEY);
   localStorage.removeItem(CONNECTION_META_KEY);
 }
