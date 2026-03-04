@@ -22,8 +22,37 @@ const state = {
   platform: 'all',
   horizon: 30,
   metric: 'downloads',
-  scope: 'month'
+  scope: 'month',
+  refreshToken: Date.now()
 };
+
+function formatFreshness(isoDate) {
+  const parsed = Date.parse(isoDate ?? '');
+  if (!Number.isFinite(parsed)) return 'unknown';
+  const minutes = Math.max(0, Math.round((Date.now() - parsed) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h ago`;
+}
+
+function setRefreshing(isRefreshing) {
+  const button = document.querySelector('#refresh-dashboard-btn');
+  if (!button) return;
+  button.disabled = isRefreshing;
+  button.textContent = isRefreshing ? 'Refreshing…' : 'Refresh data';
+}
+
+function updateFreshnessPill(overviewData) {
+  const pill = document.querySelector('#data-freshness-pill');
+  if (!pill) return;
+  pill.textContent = `🔴 Data freshness: ${formatFreshness(overviewData?.generatedAt)}`;
+}
+
+function triggerRefresh() {
+  state.refreshToken = Date.now();
+  init();
+}
 
 function buildGlobalBar(platforms) {
   const host = document.querySelector('#global-filter-bar');
@@ -51,7 +80,8 @@ function buildGlobalBar(platforms) {
           <option value="revenue">Revenue</option>
         </select>
       </label>
-      <span class="pill pill--live">🔴 Data freshness</span>
+      <span class="pill pill--live" id="data-freshness-pill">🔴 Data freshness</span>
+      <button id="refresh-dashboard-btn" class="button-secondary" type="button">Refresh data</button>
     </section>
     <section class="mode-tabs">
       <button data-mode="overview" class="mode-tab mode-tab--active">Overview</button>
@@ -75,6 +105,8 @@ function buildGlobalBar(platforms) {
     state.metric = event.target.value;
     init();
   });
+
+  host.querySelector('#refresh-dashboard-btn').addEventListener('click', triggerRefresh);
 
   host.querySelectorAll('.mode-tab').forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -150,11 +182,12 @@ function renderDashboard(dashboard, data, statusPayload) {
 async function init() {
   const dashboard = document.querySelector('#dashboard');
   dashboard.innerHTML = '<div class="widget col-12"><div class="widget__content">Loading analytics...</div></div>';
+  setRefreshing(true);
 
   try {
     const [platformResponse, overviewData, statusPayload] = await Promise.all([
       getPlatforms(),
-      getOverview({ platform: state.platform, horizon: state.horizon }),
+      getOverview({ platform: state.platform, horizon: state.horizon, _t: state.refreshToken }),
       getCollectionStatus(10)
     ]);
 
@@ -162,9 +195,12 @@ async function init() {
       buildGlobalBar(platformResponse.platforms);
     }
 
+    updateFreshnessPill(overviewData);
     renderDashboard(dashboard, withScopedTimeline(overviewData), statusPayload);
   } catch (error) {
     dashboard.innerHTML = `<div class="widget col-12"><div class="widget__content">Failed to load dashboard: ${error.message}</div></div>`;
+  } finally {
+    setRefreshing(false);
   }
 }
 

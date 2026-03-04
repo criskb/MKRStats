@@ -15,6 +15,7 @@ import { mountScenarioWidget } from './widgets/scenarioWidget.js';
 import { mountTopModelsWidget } from './widgets/topModelsWidget.js';
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+let refreshToken = Date.now();
 
 function getConnectionScope() {
   const meta = loadConnectionMeta();
@@ -34,28 +35,33 @@ function renderScopeNotice(root, scope) {
   if (scope.hasConfiguredScope) {
     root.insertAdjacentHTML(
       'afterbegin',
-      `<section class="widget col-12"><div class="widget__content">Scoped to ${scope.configuredPlatforms.length} configured platform(s). Data refreshes every 5 minutes.</div></section>`
+      `<section class="widget col-12"><div class="widget__content">Scoped to ${scope.configuredPlatforms.length} configured platform(s). Data refreshes every 5 minutes. <button id="refresh-our-stats-btn" class="button-secondary" type="button">Refresh now</button></div></section>`
     );
     return;
   }
 
   root.insertAdjacentHTML(
     'afterbegin',
-    '<section class="widget col-12"><div class="widget__content">No platform connections configured yet. Showing full portfolio fallback. Go to Settings / Profile and save connections to enable strict scoped stats.</div></section>'
+    '<section class="widget col-12"><div class="widget__content">No platform connections configured yet. Showing full portfolio fallback. Go to Settings / Profile and save connections to enable strict scoped stats. <button id="refresh-our-stats-btn" class="button-secondary" type="button">Refresh now</button></div></section>'
   );
 }
 
-async function renderOurStats() {
+async function renderOurStats(forceRefresh = false) {
   const root = document.querySelector('#our-stats');
   renderSkeleton(root);
 
   try {
+    if (forceRefresh) {
+      refreshToken = Date.now();
+    }
+
     const scope = getConnectionScope();
     const [data, statusPayload] = await Promise.all([
       getOverview({
         platform: 'all',
         horizon: 30,
-        connected: scope.configuredPlatforms
+        connected: scope.configuredPlatforms,
+        _t: refreshToken
       }),
       getCollectionStatus(10)
     ]);
@@ -96,10 +102,17 @@ async function renderOurStats() {
     mountScenarioWidget(scenarios.content, data.forecast.revenue);
     mountCollectionHealthWidget(diagnostics.content, data.collection, statusPayload);
     mountTopModelsWidget(topModels.content, data.aggregated.topModels);
+
+    const refreshButton = document.querySelector('#refresh-our-stats-btn');
+    if (refreshButton) {
+      refreshButton.addEventListener('click', () => {
+        renderOurStats(true);
+      });
+    }
   } catch (error) {
     root.innerHTML = `<div class="widget col-12"><div class="widget__content">Failed to load our stats: ${error.message}</div></div>`;
   }
 }
 
 renderOurStats();
-setInterval(renderOurStats, REFRESH_INTERVAL_MS);
+setInterval(() => renderOurStats(true), REFRESH_INTERVAL_MS);
